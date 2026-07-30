@@ -1,0 +1,12 @@
+.env
+.streamlit/secrets.toml
+__pycache__/
+*.pyc
+_runs_equipe/
+*_sauvegarde_temp.xlsx
+*_pipeline_algo_1_2_3.xlsx
+*_pipeline_algo_1_2_3_dashboard.html
+*_algo_1_prequalification.xlsx
+*_algo_2_affinage_strategique.xlsx
+*_algo_3_orientation_programme.xlsx
+~$*.xlsx
