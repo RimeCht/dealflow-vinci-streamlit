@@ -19,6 +19,8 @@ import Generer_dashboard
 BASE_DIR = Path(__file__).resolve().parent
 RUNS_DIR = BASE_DIR / "_runs_equipe"
 PIPELINE_SCRIPT = BASE_DIR / "Pipeline_Algo123.py"
+JOB_META_FILE = "run_status.json"
+JOB_LOG_FILE = "pipeline.log"
 
 
 load_dotenv(BASE_DIR / ".env")
@@ -102,6 +104,192 @@ def parse_progress_line(line: str) -> dict | None:
         return json.loads(line[len(PROGRESS_PREFIX):])
     except json.JSONDecodeError:
         return None
+
+
+def read_json_file(path: Path) -> dict:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def write_json_file(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def read_log_tail(path: Path, limit: int = 30000) -> str:
+    if not path.exists():
+        return ""
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return ""
+    return text[-limit:]
+
+
+def last_progress_from_log(log_path: Path) -> dict | None:
+    for line in reversed(read_log_tail(log_path).splitlines()):
+        progress = parse_progress_line(line.strip())
+        if progress:
+            return progress
+    return None
+
+
+def pid_is_running(pid: int | str | None) -> bool:
+    try:
+        pid_int = int(pid or 0)
+    except (TypeError, ValueError):
+        return False
+    if pid_int <= 0:
+        return False
+
+    if os.name == "nt":
+        try:
+            result = subprocess.run(
+                ["tasklist", "/FI", f"PID eq {pid_int}"],
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+            return str(pid_int) in result.stdout
+        except Exception:
+            return False
+
+    try:
+        os.kill(pid_int, 0)
+        return True
+    except OSError:
+        return False
+
+
+def job_state(meta: dict) -> str:
+    excel_raw = str(meta.get("excel_path", "")).strip()
+    if excel_raw and Path(excel_raw).exists():
+        return "done"
+    if pid_is_running(meta.get("pid")):
+        return "running"
+    log_tail = read_log_tail(Path(meta.get("log_path", "")))
+    if "Erreur sur" in log_tail or "Traceback" in log_tail:
+        return "error"
+    return "stopped"
+
+
+def start_background_pipeline(input_path: Path, profile: str) -> dict:
+    excel_path, dashboard_path, temp_path = pipeline_output_paths(input_path)
+    log_path = input_path.parent / JOB_LOG_FILE
+    meta_path = input_path.parent / JOB_META_FILE
+
+    command = [sys.executable, "-B", str(PIPELINE_SCRIPT), str(input_path)]
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUNBUFFERED"] = "1"
+    env["PIPELINE_GENERATE_DASHBOARD"] = env.get("PIPELINE_GENERATE_DASHBOARD", "1")
+    env["DEALFLOW_PROFILE"] = profile
+    env["PIPELINE_STREAMLIT_PROGRESS"] = "1"
+
+    log_file = log_path.open("w", encoding="utf-8", errors="replace")
+    popen_kwargs = {
+        "cwd": str(BASE_DIR),
+        "stdout": log_file,
+        "stderr": subprocess.STDOUT,
+        "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
+        "env": env,
+    }
+    if os.name == "nt":
+        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        popen_kwargs["start_new_session"] = True
+
+    process = subprocess.Popen(command, **popen_kwargs)
+    log_file.close()
+
+    meta = {
+        "pid": process.pid,
+        "profile": profile,
+        "started_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "input_path": str(input_path),
+        "excel_path": str(excel_path),
+        "dashboard_path": str(dashboard_path),
+        "temp_path": str(temp_path),
+        "log_path": str(log_path),
+        "meta_path": str(meta_path),
+    }
+    write_json_file(meta_path, meta)
+    return meta
+
+
+def iter_job_metas(limit: int = 20) -> list[dict]:
+    if not RUNS_DIR.exists():
+        return []
+
+    metas = []
+    for meta_path in sorted(RUNS_DIR.glob(f"**/{JOB_META_FILE}"), reverse=True):
+        meta = read_json_file(meta_path)
+        if not meta:
+            continue
+        meta.setdefault("meta_path", str(meta_path))
+        metas.append(meta)
+    return metas[:limit]
+
+
+def job_display_name(meta: dict) -> str:
+    input_path = Path(str(meta.get("input_path", "")))
+    if input_path.name:
+        return input_path.name
+    return Path(str(meta.get("meta_path", ""))).parent.name or "run"
+
+
+def render_job_monitor(meta: dict, key_prefix: str = "job") -> None:
+    state = job_state(meta)
+    excel_path = Path(meta.get("excel_path", ""))
+    dashboard_path = Path(meta.get("dashboard_path", ""))
+    temp_path = Path(meta.get("temp_path", ""))
+    log_path = Path(meta.get("log_path", ""))
+    progress = last_progress_from_log(log_path)
+
+    if progress:
+        done = int(progress.get("done") or 0)
+        total = int(progress.get("total") or 0)
+        percent = float(progress.get("percent") or 0)
+        ratio = min(max(percent / 100, 0), 1)
+        stage = str(progress.get("stage") or "Analyse")
+        elapsed = format_duration(progress.get("elapsed_seconds"))
+        eta = format_duration(progress.get("eta_seconds"))
+    else:
+        done = 0
+        total = 0
+        percent = 0.0
+        ratio = 0.0
+        stage = "Préparation"
+        elapsed = "calcul en cours"
+        eta = "calcul en cours"
+
+    if state == "done":
+        ratio = 1.0
+        percent = 100.0
+        st.progress(ratio, text="Analyse terminée - 100%")
+        st.success("Analyse terminée. Les fichiers sont disponibles ci-dessous.")
+        render_outputs(excel_path, dashboard_path, temp_path)
+    elif state == "running":
+        st.progress(ratio, text=f"{stage} - {percent:.1f}%")
+        st.markdown(
+            f"**{done}/{total} startups traitées** · temps écoulé : `{elapsed}` · temps restant estimé : `{eta}`"
+        )
+        st.info("Analyse en cours en arrière-plan. Tu peux fermer cet onglet, puis revenir dans l'app pour reprendre le suivi.")
+        time.sleep(3)
+        st.rerun()
+    elif state == "error":
+        st.error("Le job semble arrêté avec une erreur. La sauvegarde temporaire est disponible si elle a été créée.")
+        render_outputs(excel_path, dashboard_path, temp_path)
+    else:
+        st.warning("Le job n'est plus actif et le fichier final n'est pas encore disponible.")
+        render_outputs(excel_path, dashboard_path, temp_path)
+
+    with st.expander("Logs techniques", expanded=False):
+        st.code(read_log_tail(log_path, 50000) or "Aucun log disponible.", language="text")
 
 
 def render_css() -> None:
@@ -365,6 +553,27 @@ def page_run_pipeline(profile: str) -> None:
         unsafe_allow_html=True,
     )
     st.caption(f"Profil actif : {profile}")
+
+    active_meta = st.session_state.get("active_job_meta")
+    if active_meta:
+        render_job_monitor(active_meta, "active")
+        if job_state(active_meta) != "running":
+            if st.button("Lancer une nouvelle analyse", use_container_width=True):
+                st.session_state.pop("active_job_meta", None)
+                st.rerun()
+        return
+
+    running_jobs = [meta for meta in iter_job_metas(limit=10) if job_state(meta) == "running"]
+    if running_jobs:
+        st.markdown("### Analyses en cours")
+        for index, meta in enumerate(running_jobs[:3]):
+            with st.container(border=True):
+                st.write(f"**{job_display_name(meta)}**")
+                st.caption(f"Profil : {meta.get('profile', '')} · démarré le {meta.get('started_at', '')}")
+                if st.button("Suivre ce run", key=f"follow-running-{index}", use_container_width=True):
+                    st.session_state["active_job_meta"] = meta
+                    st.rerun()
+
     uploaded_file = st.file_uploader(
         "Fichier Excel source",
         type=["xlsx", "xlsm", "xls"],
@@ -373,26 +582,25 @@ def page_run_pipeline(profile: str) -> None:
 
     col1, col2 = st.columns([1, 2])
     with col1:
-        start = st.button("Lancer l'analyse complète", type="primary", use_container_width=True)
+        start = st.button("Lancer l'analyse en arrière-plan", type="primary", use_container_width=True)
     with col2:
-        st.caption("Pour les gros fichiers, laisse la fenêtre ouverte. Le pipeline garde aussi une sauvegarde temporaire.")
+        st.caption("Tu peux fermer l'onglet pendant l'analyse. Le serveur doit rester allumé et le pipeline garde une sauvegarde temporaire.")
 
     if not uploaded_file:
         return
 
-    run_dir = RUNS_DIR / run_dir_name(uploaded_file.name)
-    input_path = save_uploaded_file(uploaded_file, run_dir)
-    excel_path, dashboard_path, temp_path = pipeline_output_paths(input_path)
-    st.session_state["last_run_paths"] = [str(excel_path), str(dashboard_path), str(temp_path)]
-
-    st.write(f"Fichier enregistré : `{input_path.name}`")
+    st.write(f"Fichier prêt : `{uploaded_file.name}`")
     if start:
-        return_code, _ = run_pipeline(input_path, profile)
-        if return_code == 0:
-            render_outputs(excel_path, dashboard_path, temp_path)
-        else:
-            st.warning("Le pipeline n'a pas terminé correctement. Regarde les logs ci-dessus et la sauvegarde temporaire si elle existe.")
-            render_outputs(excel_path, dashboard_path, temp_path)
+        run_dir = RUNS_DIR / run_dir_name(uploaded_file.name)
+        input_path = save_uploaded_file(uploaded_file, run_dir)
+        meta = start_background_pipeline(input_path, profile)
+        st.session_state["active_job_meta"] = meta
+        st.session_state["last_run_paths"] = [
+            meta["excel_path"],
+            meta["dashboard_path"],
+            meta["temp_path"],
+        ]
+        st.rerun()
 
 
 def page_dashboard_only() -> None:

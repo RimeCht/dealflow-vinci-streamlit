@@ -75,7 +75,7 @@ Interface web interne pour l'equipe. Elle permet de :
 
 - uploader un fichier Excel source ;
 - choisir le profil de traitement `Europe` ou `LATAM` ;
-- lancer le pipeline Algo1 -> Algo2 -> Algo3 ;
+- lancer le pipeline Algo1 -> Algo2 -> Algo3 en arriere-plan ;
 - suivre les logs pendant l'analyse ;
 - telecharger l'Excel final ;
 - telecharger et visualiser le dashboard HTML ;
@@ -104,6 +104,12 @@ L'equipe ouvre ensuite :
 ```text
 http://adresse-du-serveur:8501
 ```
+
+Depuis l'app, fermer l'onglet navigateur ne coupe pas le job en cours :
+le pipeline continue en arriere-plan, ecrit `pipeline.log` et `run_status.json`
+dans le dossier du run, puis l'app peut reprendre le suivi via "Analyses en cours".
+En revanche, si la machine ou le serveur qui heberge Streamlit s'eteint, le job
+s'arrete aussi.
 
 Important : ne pas partager le vrai fichier `.env`. Utilise `.env.example`
 comme modele, puis mets la vraie cle Azure OpenAI uniquement sur la machine
