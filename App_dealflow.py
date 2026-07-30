@@ -1,6 +1,7 @@
 import os
 import json
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -163,11 +164,67 @@ def pid_is_running(pid: int | str | None) -> bool:
         return False
 
 
+def append_log_line(path: Path, message: str) -> None:
+    try:
+        with path.open("a", encoding="utf-8", errors="replace") as log_file:
+            log_file.write(message.rstrip() + "\n")
+    except Exception:
+        return
+
+
+def stop_background_job(meta: dict) -> bool:
+    try:
+        pid_int = int(meta.get("pid") or 0)
+    except (TypeError, ValueError):
+        return False
+    if pid_int <= 0:
+        return False
+
+    stopped_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    updated_meta = dict(meta)
+    updated_meta["stop_requested_at"] = stopped_at
+    meta_path_raw = str(updated_meta.get("meta_path", "")).strip()
+    log_path_raw = str(updated_meta.get("log_path", "")).strip()
+    meta_path = Path(meta_path_raw) if meta_path_raw else None
+    log_path = Path(log_path_raw) if log_path_raw else Path()
+    if meta_path is not None:
+        write_json_file(meta_path, updated_meta)
+    append_log_line(log_path, f"[App] Stop requested at {stopped_at}.")
+
+    try:
+        if os.name == "nt":
+            ctrl_break = getattr(signal, "CTRL_BREAK_EVENT", None)
+            if ctrl_break is not None:
+                os.kill(pid_int, ctrl_break)
+                time.sleep(2)
+            if pid_is_running(pid_int):
+                subprocess.run(
+                    ["taskkill", "/PID", str(pid_int), "/T", "/F"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+        else:
+            try:
+                os.killpg(pid_int, signal.SIGINT)
+            except ProcessLookupError:
+                return True
+            time.sleep(2)
+            if pid_is_running(pid_int):
+                os.killpg(pid_int, signal.SIGTERM)
+        return True
+    except Exception as exc:
+        append_log_line(log_path, f"[App] Stop failed: {exc}")
+        return False
+
+
 def job_state(meta: dict) -> str:
     excel_raw = str(meta.get("excel_path", "")).strip()
     if excel_raw and Path(excel_raw).exists():
         return "done"
     if pid_is_running(meta.get("pid")):
+        if meta.get("stop_requested_at"):
+            return "stopping"
         return "running"
     log_tail = read_log_tail(Path(meta.get("log_path", "")))
     if "Erreur sur" in log_tail or "Traceback" in log_tail:
@@ -273,12 +330,24 @@ def render_job_monitor(meta: dict, key_prefix: str = "job") -> None:
         st.progress(ratio, text="Analyse terminée - 100%")
         st.success("Analyse terminée. Les fichiers sont disponibles ci-dessous.")
         render_outputs(excel_path, dashboard_path, temp_path)
-    elif state == "running":
+    elif state in {"running", "stopping"}:
         st.progress(ratio, text=f"{stage} - {percent:.1f}%")
         st.markdown(
             f"**{done}/{total} startups traitées** · temps écoulé : `{elapsed}` · temps restant estimé : `{eta}`"
         )
-        st.info("Analyse en cours en arrière-plan. Tu peux fermer cet onglet, puis revenir dans l'app pour reprendre le suivi.")
+        if state == "stopping":
+            st.warning("Arrêt demandé. Le job est en train de se fermer.")
+        else:
+            st.info("Analyse en cours en arrière-plan. Tu peux fermer cet onglet, puis revenir dans l'app pour reprendre le suivi.")
+            if st.button("Arrêter l'analyse", key=f"{key_prefix}-stop", type="secondary", use_container_width=True):
+                if stop_background_job(meta):
+                    refreshed = read_json_file(Path(str(meta.get("meta_path", ""))))
+                    st.session_state["active_job_meta"] = refreshed or meta
+                    st.warning("Arrêt demandé. La dernière sauvegarde temporaire disponible sera conservée.")
+                else:
+                    st.error("Impossible d'arrêter le job automatiquement. Vérifie le serveur ou les logs.")
+                time.sleep(1)
+                st.rerun()
         time.sleep(3)
         st.rerun()
     elif state == "error":
@@ -563,7 +632,11 @@ def page_run_pipeline(profile: str) -> None:
                 st.rerun()
         return
 
-    running_jobs = [meta for meta in iter_job_metas(limit=10) if job_state(meta) == "running"]
+    running_jobs = [
+        meta
+        for meta in iter_job_metas(limit=10)
+        if job_state(meta) in {"running", "stopping"}
+    ]
     if running_jobs:
         st.markdown("### Analyses en cours")
         for index, meta in enumerate(running_jobs[:3]):

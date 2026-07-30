@@ -108,6 +108,8 @@ http://adresse-du-serveur:8501
 Depuis l'app, fermer l'onglet navigateur ne coupe pas le job en cours :
 le pipeline continue en arriere-plan, ecrit `pipeline.log` et `run_status.json`
 dans le dossier du run, puis l'app peut reprendre le suivi via "Analyses en cours".
+Le bouton `Arreter l'analyse` demande l'arret du job et conserve la derniere
+sauvegarde temporaire disponible.
 En revanche, si la machine ou le serveur qui heberge Streamlit s'eteint, le job
 s'arrete aussi.
 
