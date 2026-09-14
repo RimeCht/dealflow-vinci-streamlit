@@ -1,3 +1,4 @@
+import base64
 import json
 import math
 import re
@@ -13,6 +14,39 @@ import pandas as pd
 OUTPUT_SUFFIX = "_dashboard.html"
 PIPELINE_SUFFIX = "_pipeline_algo_1_2_3"
 TEMP_MARKER = "_sauvegarde_temp"
+ASSETS_DIR = Path(__file__).resolve().parent / "assets"
+
+
+def asset_data_uri(filename: str, mime_type: str, *, fix_svg: bool = False) -> str:
+    path = ASSETS_DIR / filename
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return ""
+    if fix_svg:
+        data = data.decode("utf-8").replace("viewbox=", "viewBox=").encode("utf-8")
+    return f"data:{mime_type};base64,{base64.b64encode(data).decode('ascii')}"
+
+
+def dashboard_font_css() -> str:
+    fonts = [
+        ("Vinci Sans", "Vinci-Sans-Regular.woff2", 400),
+        ("Vinci Sans", "Vinci-Sans-Medium.woff2", 500),
+        ("Vinci Sans", "Vinci-Sans-Bold.woff2", 700),
+        ("Vinci Serif", "Vinci-Serif-Regular.woff2", 400),
+    ]
+    rules = []
+    for family, filename, weight in fonts:
+        uri = asset_data_uri(filename, "font/woff2")
+        if uri:
+            rules.append(
+                "@font-face {"
+                f"font-family:'{family}';"
+                f"src:url('{uri}') format('woff2');"
+                f"font-weight:{weight};font-style:normal;font-display:swap;"
+                "}"
+            )
+    return "".join(rules)
 
 
 def log(message: str) -> None:
@@ -481,6 +515,7 @@ def build_summary(records: list[dict], input_file: Path, sheet_name: str) -> dic
 def build_dashboard_html(data: dict) -> str:
     data_json = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
     title = escape(f"Dashboard dealflow - {data['summary']['source_file']}")
+    logo_uri = asset_data_uri("leonard-vinci-logo.svg", "image/svg+xml", fix_svg=True)
     template = r"""<!doctype html>
 <html lang="fr">
 <head>
@@ -488,38 +523,49 @@ def build_dashboard_html(data: dict) -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>__TITLE__</title>
   <style>
+    __VINCI_FONT_CSS__
     :root {
-      --bg: #f5f7f6;
+      --bg: #f3f6f8;
       --panel: #ffffff;
-      --ink: #17211d;
-      --muted: #65736c;
-      --line: #dbe2de;
-      --green: #1f8a62;
-      --teal: #127c86;
-      --blue: #315fba;
+      --ink: #102b45;
+      --muted: #617487;
+      --line: #d7e2ea;
+      --green: #18a566;
+      --teal: #00857c;
+      --blue: #004489;
+      --cyan: #00b4ff;
+      --pink: #ff005a;
       --amber: #b7791f;
       --red: #b23b3b;
-      --violet: #6f4aa7;
-      --shadow: 0 12px 30px rgba(23, 33, 29, 0.08);
+      --violet: #6950a1;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       background: var(--bg);
       color: var(--ink);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-family: "Vinci Sans", Arial, sans-serif;
       line-height: 1.45;
+      letter-spacing: 0;
     }
     .shell { max-width: 1440px; margin: 0 auto; padding: 24px; }
     header {
       display: flex;
       justify-content: space-between;
       gap: 20px;
-      align-items: flex-start;
+      align-items: center;
       margin-bottom: 18px;
+      padding: 18px 20px;
+      background: var(--panel);
+      border-top: 4px solid var(--blue);
+      border-bottom: 1px solid var(--line);
     }
-    h1 { margin: 0; font-size: 28px; font-weight: 760; letter-spacing: 0; }
-    h2 { margin: 0 0 14px; font-size: 16px; font-weight: 720; letter-spacing: 0; }
+    .brand-lockup { display: flex; align-items: center; gap: 20px; }
+    .brand-lockup img { display: block; width: 180px; height: auto; }
+    .brand-copy { padding-left: 20px; border-left: 1px solid var(--line); }
+    h1, .kpi-value, .step-value { font-family: "Vinci Serif", Georgia, serif; }
+    h1 { margin: 0; font-size: 28px; font-weight: 400; letter-spacing: 0; }
+    h2 { margin: 0 0 14px; font-size: 16px; font-weight: 700; letter-spacing: 0; color: var(--blue); }
     p { margin: 0; }
     .meta { color: var(--muted); font-size: 13px; margin-top: 6px; }
     .toolbar {
@@ -533,23 +579,25 @@ def build_dashboard_html(data: dict) -> str:
       background: var(--panel);
       color: var(--ink);
       min-height: 38px;
-      border-radius: 8px;
+      border-radius: 3px;
       font: inherit;
       font-size: 13px;
     }
     button { padding: 0 12px; cursor: pointer; }
-    button:hover { border-color: #9eb4aa; }
+    button:hover { border-color: var(--pink); color: var(--pink); }
+    #exportCsv { color: #ffffff; background: var(--pink); border-color: var(--pink); }
     input, select { padding: 0 10px; min-width: 190px; }
     .grid { display: grid; gap: 14px; }
-    .kpis { grid-template-columns: repeat(7, minmax(0, 1fr)); margin-bottom: 14px; }
+    .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 14px; }
     .card {
       background: var(--panel);
       border: 1px solid var(--line);
-      border-radius: 8px;
-      box-shadow: var(--shadow);
+      border-radius: 3px;
     }
-    .kpi { padding: 14px; min-height: 104px; }
-    .kpi-value { font-size: 30px; font-weight: 800; margin-top: 8px; }
+    .kpi { padding: 14px 14px 14px 18px; min-height: 104px; border-left: 4px solid var(--cyan); }
+    .kpi:nth-child(3n+2) { border-left-color: var(--pink); }
+    .kpi:nth-child(3n) { border-left-color: var(--blue); }
+    .kpi-value { font-size: 30px; font-weight: 400; margin-top: 8px; }
     .kpi-label { font-size: 12px; color: var(--muted); text-transform: uppercase; }
     .kpi-hint { color: var(--muted); font-size: 12px; margin-top: 2px; }
     .main { grid-template-columns: 1.25fr 0.75fr; align-items: start; }
@@ -561,12 +609,12 @@ def build_dashboard_html(data: dict) -> str:
     }
     .step {
       border: 1px solid var(--line);
-      border-radius: 8px;
+      border-radius: 3px;
       padding: 14px;
       min-height: 118px;
       position: relative;
       overflow: hidden;
-      background: #fbfcfb;
+      background: var(--panel);
     }
     .step::before {
       content: "";
@@ -589,9 +637,9 @@ def build_dashboard_html(data: dict) -> str:
       margin: 10px 0;
       font-size: 13px;
     }
-    .bar-track { height: 11px; border-radius: 99px; background: #eef2ef; overflow: hidden; }
-    .bar-fill { height: 100%; border-radius: 99px; background: var(--bar-color, var(--green)); min-width: 2px; }
-    .label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #33423b; }
+    .bar-track { height: 11px; border-radius: 2px; background: #e8eef3; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 2px; background: var(--bar-color, var(--blue)); min-width: 2px; }
+    .label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
     .value { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
     .split { grid-template-columns: 1fr 1fr; margin-top: 14px; align-items: start; }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -603,17 +651,17 @@ def build_dashboard_html(data: dict) -> str:
       padding: 10px 8px;
       white-space: nowrap;
     }
-    td { border-bottom: 1px solid #edf1ee; padding: 10px 8px; vertical-align: top; }
-    tr:hover td { background: #fafcfb; }
+    td { border-bottom: 1px solid #e8eef3; padding: 10px 8px; vertical-align: top; }
+    tr:hover td { background: #f5fbfe; }
     .pill {
       display: inline-flex;
       align-items: center;
       min-height: 24px;
-      border-radius: 999px;
+      border-radius: 3px;
       padding: 2px 9px;
       font-size: 12px;
       border: 1px solid var(--line);
-      background: #f6f8f7;
+      background: #f3f6f8;
       white-space: nowrap;
     }
     .pill.green { color: #0f6a48; background: #edf8f2; border-color: #c8ead8; }
@@ -633,13 +681,13 @@ def build_dashboard_html(data: dict) -> str:
       overflow: auto;
       max-height: 620px;
       border: 1px solid var(--line);
-      border-radius: 8px;
+      border-radius: 3px;
     }
     .wide-table table { min-width: 1360px; }
     .wide-table thead th {
       position: sticky;
       top: 0;
-      background: #fbfcfb;
+      background: #f5f9fc;
       z-index: 1;
     }
     .footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
@@ -649,6 +697,8 @@ def build_dashboard_html(data: dict) -> str:
       .charts { grid-template-columns: 1fr; }
       .funnel { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       header { flex-direction: column; }
+      .brand-lockup { align-items: flex-start; flex-direction: column; }
+      .brand-copy { padding-left: 0; border-left: 0; }
       .toolbar { justify-content: flex-start; }
     }
     @media (max-width: 640px) {
@@ -663,9 +713,12 @@ def build_dashboard_html(data: dict) -> str:
 <body>
   <div class="shell">
     <header>
-      <div>
-        <h1>Dashboard dealflow startups</h1>
-        <p class="meta"><span id="sourceFile"></span> · généré le <span id="generatedAt"></span> · sheet source <span id="sourceSheet"></span></p>
+      <div class="brand-lockup">
+        <img src="__LOGO_URI__" alt="Leonard, powered by VINCI">
+        <div class="brand-copy">
+          <h1>Dashboard dealflow startups</h1>
+          <p class="meta"><span id="sourceFile"></span> · généré le <span id="generatedAt"></span> · sheet source <span id="sourceSheet"></span></p>
+        </div>
       </div>
       <div class="toolbar">
         <button id="showPriority">À vérifier</button>
@@ -726,7 +779,7 @@ def build_dashboard_html(data: dict) -> str:
 
   <script>
     const DATA = __DASHBOARD_DATA__;
-    const COLORS = ["#1f8a62", "#127c86", "#315fba", "#b7791f", "#b23b3b", "#6f4aa7", "#68766f", "#2f7d99"];
+    const COLORS = ["#004489", "#00b4ff", "#ff005a", "#00857c", "#b7791f", "#b23b3b", "#6950a1", "#617487"];
     const records = DATA.records || [];
 
     function esc(value) {
@@ -768,7 +821,7 @@ def build_dashboard_html(data: dict) -> str:
     }
 
     function renderFunnel() {
-      const colors = ["#1f8a62", "#127c86", "#315fba", "#b7791f", "#6f4aa7"];
+      const colors = ["#004489", "#00b4ff", "#ff005a", "#00857c", "#6950a1"];
       document.getElementById("funnel").innerHTML = (DATA.summary.funnel || []).map((step, index) => `
         <article class="step" style="--step-color:${colors[index % colors.length]}">
           <div class="step-label">${esc(step.label)}</div>
@@ -937,6 +990,8 @@ def build_dashboard_html(data: dict) -> str:
     return (
         template
         .replace("__TITLE__", title)
+        .replace("__VINCI_FONT_CSS__", dashboard_font_css())
+        .replace("__LOGO_URI__", logo_uri)
         .replace("__DASHBOARD_DATA__", data_json)
     )
 

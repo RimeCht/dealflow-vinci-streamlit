@@ -1,4 +1,6 @@
 import os
+import base64
+import html
 import json
 import re
 import signal
@@ -18,6 +20,7 @@ import Generer_dashboard
 
 
 BASE_DIR = Path(__file__).resolve().parent
+ASSETS_DIR = BASE_DIR / "assets"
 RUNS_DIR = BASE_DIR / "_runs_equipe"
 PIPELINE_SCRIPT = BASE_DIR / "Pipeline_Algo123.py"
 JOB_META_FILE = "run_status.json"
@@ -42,6 +45,51 @@ load_streamlit_secrets_to_env()
 
 
 PROGRESS_PREFIX = "__PIPELINE_PROGRESS__ "
+
+
+def asset_data_uri(filename: str, mime_type: str) -> str:
+    path = ASSETS_DIR / filename
+    try:
+        encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    except OSError:
+        return ""
+    return f"data:{mime_type};base64,{encoded}"
+
+
+def inline_svg(filename: str, class_name: str) -> str:
+    path = ASSETS_DIR / filename
+    try:
+        svg = path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    svg = svg.replace("viewbox=", "viewBox=")
+    if 'class="logo-colored"' in svg:
+        return svg.replace('class="logo-colored"', f'class="{class_name}"', 1)
+    return svg.replace("<svg", f'<svg class="{class_name}"', 1)
+
+
+def vinci_font_faces() -> str:
+    fonts = [
+        ("Vinci Sans", "Vinci-Sans-Regular.woff2", 400),
+        ("Vinci Sans", "Vinci-Sans-Medium.woff2", 500),
+        ("Vinci Sans", "Vinci-Sans-Bold.woff2", 700),
+        ("Vinci Serif", "Vinci-Serif-Regular.woff2", 400),
+    ]
+    rules = []
+    for family, filename, weight in fonts:
+        uri = asset_data_uri(filename, "font/woff2")
+        if not uri:
+            continue
+        rules.append(
+            "@font-face {"
+            f"font-family: '{family}';"
+            f"src: url('{uri}') format('woff2');"
+            f"font-weight: {weight};"
+            "font-style: normal;"
+            "font-display: swap;"
+            "}"
+        )
+    return "\n".join(rules)
 
 
 def safe_filename(name: str) -> str:
@@ -391,79 +439,496 @@ def render_job_monitor(meta: dict, key_prefix: str = "job") -> None:
 
 
 def render_css() -> None:
-    st.markdown(
-        """
-        <style>
+    css = vinci_font_faces() + """
+    :root {
+        --leonard-navy: #004489;
+        --leonard-blue: #00b4ff;
+        --leonard-pink: #ff005a;
+        --leonard-ink: #102b45;
+        --leonard-muted: #617487;
+        --leonard-canvas: #f3f6f8;
+        --leonard-line: #d7e2ea;
+        --leonard-white: #ffffff;
+        --leonard-soft-blue: #e9f7fd;
+    }
+
+    html, body, .stApp,
+    .stApp p, .stApp label, .stApp button,
+    .stApp input, .stApp textarea,
+    .stApp [role="tab"] {
+        font-family: "Vinci Sans", Arial, sans-serif;
+        letter-spacing: 0 !important;
+    }
+    .stApp,
+    [data-testid="stAppViewContainer"] {
+        background: var(--leonard-canvas);
+        color: var(--leonard-ink);
+    }
+    [data-testid="stHeader"] {
+        background: transparent;
+    }
+    [data-testid="stToolbar"] {
+        right: 0.75rem;
+    }
+    .block-container {
+        max-width: 1280px;
+        padding-top: 1.1rem;
+        padding-bottom: 3rem;
+    }
+    h1, h2,
+    .brand-title,
+    .metric-value {
+        font-family: "Vinci Serif", Georgia, serif !important;
+        letter-spacing: 0 !important;
+    }
+    h1, h2, h3, p {
+        color: var(--leonard-ink);
+    }
+    h2 {
+        font-size: 1.65rem !important;
+        font-weight: 400 !important;
+        margin: 0 0 0.35rem !important;
+    }
+    h3 {
+        font-size: 1.05rem !important;
+        font-weight: 700 !important;
+        margin-top: 1.4rem !important;
+    }
+
+    [data-testid="stSidebar"] {
+        background: var(--leonard-white);
+        border-right: 1px solid var(--leonard-line);
+    }
+    [data-testid="stSidebar"] > div:first-child {
+        padding-top: 1.2rem;
+    }
+    [data-testid="stSidebar"]::before {
+        content: "";
+        display: block;
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 4px;
+        background: var(--leonard-pink);
+    }
+    .sidebar-brand {
+        padding: 0.35rem 0 1.15rem;
+        border-bottom: 1px solid var(--leonard-line);
+        margin-bottom: 1.25rem;
+    }
+    .sidebar-brand .sidebar-logo {
+        display: block;
+        width: 188px;
+        max-width: 100%;
+        height: auto;
+        margin-bottom: 0.95rem;
+    }
+    .sidebar-product {
+        color: var(--leonard-navy);
+        font-family: "Vinci Serif", Georgia, serif;
+        font-size: 1.22rem;
+    }
+    .sidebar-caption,
+    .sidebar-label {
+        color: var(--leonard-muted);
+        font-size: 0.74rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        margin-top: 0.2rem;
+    }
+    .sidebar-label {
+        color: var(--leonard-navy);
+        margin: 0 0 0.45rem;
+    }
+    .system-status {
+        border-top: 1px solid var(--leonard-line);
+        border-bottom: 1px solid var(--leonard-line);
+        padding: 0.85rem 0;
+        margin: 1.25rem 0 0.75rem;
+        color: var(--leonard-muted);
+        font-size: 0.82rem;
+    }
+    .system-status strong {
+        color: var(--leonard-ink);
+        font-weight: 700;
+    }
+    .status-dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #18a566;
+        margin-right: 0.45rem;
+    }
+    .status-dot.warning {
+        background: #e5a100;
+    }
+
+    .brand-header {
+        position: relative;
+        background: var(--leonard-white);
+        border-top: 4px solid var(--leonard-navy);
+        border-bottom: 1px solid var(--leonard-line);
+        padding: 1.35rem 1.55rem 0;
+        margin-bottom: 1.05rem;
+        overflow: hidden;
+    }
+    .brand-header::before {
+        content: "";
+        position: absolute;
+        top: -4px;
+        right: 0;
+        width: 19%;
+        height: 4px;
+        background: var(--leonard-pink);
+    }
+    .brand-top,
+    .brand-main {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1.25rem;
+    }
+    .brand-logo {
+        width: 215px;
+        max-width: 42%;
+        height: auto;
+        display: block;
+    }
+    .internal-badge,
+    .profile-badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 28px;
+        padding: 0.25rem 0.65rem;
+        border: 1px solid var(--leonard-line);
+        color: var(--leonard-navy);
+        background: var(--leonard-white);
+        border-radius: 3px;
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        white-space: nowrap;
+    }
+    .brand-main {
+        align-items: flex-end;
+        margin-top: 1.05rem;
+        margin-bottom: 1.1rem;
+    }
+    .brand-kicker,
+    .section-kicker {
+        color: var(--leonard-pink);
+        font-size: 0.74rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        margin: 0 0 0.25rem;
+    }
+    .brand-title {
+        color: var(--leonard-ink);
+        font-size: 2rem;
+        font-weight: 400;
+        line-height: 1.05;
+        margin: 0;
+    }
+    .brand-subtitle {
+        color: var(--leonard-muted);
+        font-size: 0.9rem;
+        margin: 0.4rem 0 0;
+    }
+    .profile-badge {
+        border-color: var(--leonard-blue);
+        background: var(--leonard-soft-blue);
+    }
+    .workflow-strip {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        border-top: 1px solid var(--leonard-line);
+    }
+    .workflow-step {
+        display: grid;
+        grid-template-columns: 36px 1fr;
+        align-items: center;
+        gap: 0.7rem;
+        min-height: 57px;
+        padding: 0.65rem 1rem 0.65rem 0;
+        border-right: 1px solid var(--leonard-line);
+    }
+    .workflow-step + .workflow-step {
+        padding-left: 1rem;
+    }
+    .workflow-step:last-child {
+        border-right: 0;
+    }
+    .workflow-number {
+        font-family: "Vinci Serif", Georgia, serif;
+        color: var(--leonard-pink);
+        font-size: 1.45rem;
+        line-height: 1;
+    }
+    .workflow-step strong {
+        display: block;
+        color: var(--leonard-navy);
+        font-size: 0.82rem;
+    }
+    .workflow-step span:last-child {
+        display: block;
+        color: var(--leonard-muted);
+        font-size: 0.72rem;
+        margin-top: 0.08rem;
+    }
+
+    .section-heading {
+        margin: 1.4rem 0 0.9rem;
+    }
+    .section-heading h2 {
+        margin: 0 !important;
+    }
+    .status-box {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        border-left: 4px solid var(--leonard-blue);
+        border-top: 1px solid var(--leonard-line);
+        border-right: 1px solid var(--leonard-line);
+        border-bottom: 1px solid var(--leonard-line);
+        border-radius: 3px;
+        padding: 0.78rem 0.95rem;
+        background: var(--leonard-white);
+        color: var(--leonard-ink);
+        font-size: 0.88rem;
+    }
+    .status-box strong {
+        color: var(--leonard-navy);
+    }
+    .status-box-meta {
+        color: var(--leonard-muted);
+        font-size: 0.78rem;
+        white-space: nowrap;
+    }
+
+    .metric-card {
+        position: relative;
+        border: 1px solid var(--leonard-line);
+        border-radius: 3px;
+        background: var(--leonard-white);
+        padding: 0.95rem 1rem;
+        min-height: 112px;
+        margin-bottom: 0.8rem;
+    }
+    .metric-card::before {
+        content: "";
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 4px;
+        background: var(--leonard-blue);
+    }
+    .metric-card.metric-1::before {
+        background: var(--leonard-pink);
+    }
+    .metric-card.metric-2::before {
+        background: var(--leonard-navy);
+    }
+    .metric-label {
+        color: var(--leonard-muted);
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        font-weight: 700;
+    }
+    .metric-value {
+        color: var(--leonard-ink);
+        font-size: 1.75rem;
+        font-weight: 400;
+        margin-top: 0.28rem;
+    }
+    .metric-hint {
+        color: var(--leonard-muted);
+        font-size: 0.76rem;
+        margin-top: 0.15rem;
+    }
+
+    .stButton > button,
+    .stDownloadButton > button {
+        min-height: 42px;
+        border-radius: 3px !important;
+        border: 1px solid var(--leonard-navy);
+        background: var(--leonard-white);
+        color: var(--leonard-navy);
+        font-family: "Vinci Sans", Arial, sans-serif;
+        font-weight: 700;
+        box-shadow: none !important;
+    }
+    .stButton > button:hover,
+    .stDownloadButton > button:hover {
+        border-color: var(--leonard-pink);
+        color: var(--leonard-pink);
+    }
+    .stButton > button[kind="primary"] {
+        background: var(--leonard-pink);
+        border-color: var(--leonard-pink);
+        color: var(--leonard-white);
+    }
+    .stButton > button[kind="primary"]:hover {
+        background: #d9004d;
+        border-color: #d9004d;
+        color: var(--leonard-white);
+    }
+    [data-testid="stFileUploaderDropzone"] {
+        min-height: 150px;
+        border: 1px dashed var(--leonard-blue);
+        border-radius: 3px;
+        background: var(--leonard-white);
+    }
+    [data-testid="stFileUploaderDropzone"] button {
+        border-radius: 3px !important;
+        border-color: var(--leonard-navy);
+        color: var(--leonard-navy);
+    }
+    [data-testid="stProgress"] > div > div > div > div {
+        background: var(--leonard-pink);
+    }
+    [data-testid="stAlert"] {
+        border-radius: 3px;
+        border: 1px solid var(--leonard-line);
+    }
+    [data-testid="stExpander"] {
+        border-color: var(--leonard-line);
+        border-radius: 3px;
+        background: var(--leonard-white);
+    }
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        border-color: var(--leonard-line) !important;
+        border-radius: 3px !important;
+        background: var(--leonard-white);
+    }
+    [data-baseweb="select"] > div,
+    .stTextInput input {
+        border-radius: 3px !important;
+        border-color: var(--leonard-line) !important;
+    }
+
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 0;
+        border-bottom: 1px solid var(--leonard-line);
+        margin-bottom: 0.3rem;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 48px;
+        padding: 0 1.35rem;
+        border-radius: 0 !important;
+        color: var(--leonard-muted);
+        font-weight: 700;
+        background: transparent;
+    }
+    .stTabs [aria-selected="true"] {
+        color: var(--leonard-navy) !important;
+        box-shadow: inset 0 -3px 0 var(--leonard-pink);
+    }
+    .stTabs [data-baseweb="tab-highlight"] {
+        display: none;
+    }
+    code {
+        color: var(--leonard-navy) !important;
+        background: var(--leonard-soft-blue) !important;
+        border-radius: 2px !important;
+    }
+    [data-testid="stIconMaterial"] {
+        font-family: "Material Symbols Rounded" !important;
+        font-weight: normal !important;
+        font-style: normal !important;
+        line-height: 1 !important;
+        letter-spacing: normal !important;
+        text-transform: none !important;
+        white-space: nowrap !important;
+        word-wrap: normal !important;
+        direction: ltr !important;
+        -webkit-font-feature-settings: "liga" !important;
+        -webkit-font-smoothing: antialiased !important;
+    }
+
+    @media (max-width: 760px) {
         .block-container {
-            padding-top: 2rem;
-            padding-bottom: 3rem;
-            max-width: 1440px;
+            padding: 0.65rem 0.85rem 2rem;
         }
-        .main-title {
-            font-size: 2.1rem;
-            font-weight: 780;
-            letter-spacing: 0;
-            margin-bottom: 0.15rem;
+        .brand-header {
+            padding: 1rem 1rem 0;
         }
-        .subtitle {
-            color: #65736c;
-            font-size: 0.95rem;
-            margin-bottom: 1.2rem;
+        .brand-top,
+        .brand-main {
+            align-items: flex-start;
         }
-        .metric-card {
-            border: 1px solid #dbe2de;
-            background: #ffffff;
-            border-radius: 8px;
-            padding: 1rem;
-            min-height: 118px;
-            box-shadow: 0 10px 26px rgba(23, 33, 29, 0.07);
+        .brand-main {
+            flex-direction: column;
+            gap: 0.75rem;
         }
-        .metric-label {
-            color: #65736c;
-            font-size: 0.78rem;
-            text-transform: uppercase;
-            font-weight: 700;
+        .brand-logo {
+            max-width: 65%;
         }
-        .metric-value {
-            font-size: 1.85rem;
-            font-weight: 820;
-            margin-top: 0.35rem;
-            color: #17211d;
+        .brand-title {
+            font-size: 1.65rem;
         }
-        .metric-hint {
-            color: #65736c;
-            font-size: 0.78rem;
-            margin-top: 0.15rem;
+        .workflow-strip {
+            grid-template-columns: 1fr;
+        }
+        .workflow-step,
+        .workflow-step + .workflow-step {
+            min-height: 48px;
+            padding: 0.5rem 0;
+            border-right: 0;
+            border-bottom: 1px solid var(--leonard-line);
+        }
+        .workflow-step:last-child {
+            border-bottom: 0;
         }
         .status-box {
-            border: 1px solid #dbe2de;
-            border-radius: 8px;
-            padding: 0.85rem 1rem;
-            background: #f9fbfa;
+            align-items: flex-start;
+            flex-direction: column;
         }
-        .soft-panel {
-            border: 1px solid #dbe2de;
-            background: #ffffff;
-            border-radius: 8px;
-            padding: 1rem;
+        .status-box-meta {
+            white-space: normal;
         }
-        .small-muted {
-            color: #65736c;
-            font-size: 0.84rem;
+        .stTabs [data-baseweb="tab"] {
+            padding: 0 0.7rem;
         }
-        div[data-testid="stMetricValue"] {
-            font-weight: 780;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    }
+    """
+    st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
 
 
-def render_header() -> None:
-    st.markdown('<div class="main-title">Dealflow startups - Leonard / VINCI</div>', unsafe_allow_html=True)
+def render_header(profile: str) -> None:
+    logo_svg = inline_svg("leonard-vinci-logo.svg", "brand-logo")
+    profile_label = "Europe" if profile == dealflow_profiles.EUROPE else "LATAM"
+    logo_markup = logo_svg or '<div class="brand-title">Leonard / VINCI</div>'
     st.markdown(
-        '<div class="subtitle">Interface interne pour lancer Algo1 -> Algo2 -> Algo3, récupérer l’Excel et partager un dashboard visuel.</div>',
+        f"""
+        <header class="brand-header">
+            <div class="brand-top">
+                {logo_markup}
+                <span class="internal-badge">Usage interne</span>
+            </div>
+            <div class="brand-main">
+                <div>
+                    <div class="brand-kicker">Dealflow intelligence</div>
+                    <h1 class="brand-title">Startup Dealflow</h1>
+                    <p class="brand-subtitle">Qualification stratégique pour les métiers et programmes Leonard.</p>
+                </div>
+                <span class="profile-badge">Profil {profile_label}</span>
+            </div>
+            <div class="workflow-strip" aria-label="Parcours de qualification">
+                <div class="workflow-step">
+                    <span class="workflow-number">01</span>
+                    <span><strong>Éligibilité</strong><span>Premier filtre</span></span>
+                </div>
+                <div class="workflow-step">
+                    <span class="workflow-number">02</span>
+                    <span><strong>Alignement</strong><span>Enjeux stratégiques</span></span>
+                </div>
+                <div class="workflow-step">
+                    <span class="workflow-number">03</span>
+                    <span><strong>Orientation</strong><span>Seed · Catalyst · Matériaux</span></span>
+                </div>
+            </div>
+        </header>
+        """,
         unsafe_allow_html=True,
     )
 
@@ -479,31 +944,53 @@ def render_config_status() -> str:
         default_profile = dealflow_profiles.EUROPE
 
     profile_labels = {
-        dealflow_profiles.EUROPE: "Europe - criteres actuels",
-        dealflow_profiles.LATAM: "LATAM - anglais, ARR 500k",
+        dealflow_profiles.EUROPE: "Europe",
+        dealflow_profiles.LATAM: "LATAM",
     }
-    st.sidebar.markdown("### Profil")
+    logo_markup = inline_svg("leonard-vinci-logo.svg", "sidebar-logo")
+    st.sidebar.markdown(
+        f"""
+        <div class="sidebar-brand">
+            {logo_markup}
+            <div class="sidebar-product">Dealflow Studio</div>
+            <div class="sidebar-caption">Qualification & orientation</div>
+        </div>
+        <div class="sidebar-label">Profil d'analyse</div>
+        """,
+        unsafe_allow_html=True,
+    )
     selected_profile = st.sidebar.selectbox(
-        "Zone / criteres",
+        "Zone d'analyse",
         options=dealflow_profiles.AVAILABLE_PROFILES,
         index=dealflow_profiles.AVAILABLE_PROFILES.index(default_profile),
         format_func=lambda value: profile_labels.get(value, value),
+        label_visibility="collapsed",
     )
     os.environ["DEALFLOW_PROFILE"] = selected_profile
     if selected_profile == dealflow_profiles.LATAM:
-        st.sidebar.caption("LATAM exclut surtout construction of buildings et real estate. Infra, civil engineering, roads/bridges/tunnels/rail et materials restent inclus.")
+        st.sidebar.caption("Critères LATAM · analyse en anglais · seuil ARR adapté")
     else:
-        st.sidebar.caption("Europe conserve les criteres deja valides.")
-    st.sidebar.divider()
+        st.sidebar.caption("Critères Europe · référentiel Leonard actuel")
 
-    st.sidebar.markdown("### Configuration")
-    st.sidebar.write(f"Modèle Azure : `{deployment}`")
-    st.sidebar.write(f"API version : `{api_version}`")
-    st.sidebar.write("Endpoint : " + ("configuré" if endpoint else "manquant"))
-    st.sidebar.write("Clé API : " + ("configurée" if api_key_present else "manquante"))
-    st.sidebar.divider()
-    st.sidebar.write(f"Dossier runs : `{RUNS_DIR.name}`")
-    st.sidebar.caption("La clé API n'est jamais affichée dans l'interface.")
+    configuration_ready = bool(endpoint and api_key_present and deployment)
+    status_class = "" if configuration_ready else " warning"
+    status_label = "Système prêt" if configuration_ready else "Configuration incomplète"
+    st.sidebar.markdown(
+        f"""
+        <div class="system-status">
+            <div><span class="status-dot{status_class}"></span><strong>{status_label}</strong></div>
+            <div>{html.escape(deployment)} · Azure OpenAI</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    with st.sidebar.expander("Configuration technique", expanded=False):
+        st.write(f"Modèle : `{deployment}`")
+        st.write(f"API : `{api_version}`")
+        st.write("Endpoint : " + ("configuré" if endpoint else "manquant"))
+        st.write("Clé : " + ("configurée" if api_key_present else "manquante"))
+        st.write(f"Runs : `{RUNS_DIR.name}`")
+        st.caption("La clé API n'est jamais affichée.")
     return selected_profile
 
 
@@ -590,15 +1077,18 @@ def render_kpi_cards(summary: dict) -> None:
     kpis = summary.get("kpis", [])
     if not kpis:
         return
-    columns = st.columns(min(len(kpis), 7))
+    columns = st.columns(min(len(kpis), 4))
     for index, kpi in enumerate(kpis):
         with columns[index % len(columns)]:
+            label = html.escape(str(kpi.get("label", "")))
+            value = html.escape(str(kpi.get("value", "")))
+            hint = html.escape(str(kpi.get("hint", "")))
             st.markdown(
                 f"""
-                <div class="metric-card">
-                    <div class="metric-label">{kpi.get('label', '')}</div>
-                    <div class="metric-value">{kpi.get('value', '')}</div>
-                    <div class="metric-hint">{kpi.get('hint', '')}</div>
+                <div class="metric-card metric-{index % 3}">
+                    <div class="metric-label">{label}</div>
+                    <div class="metric-value">{value}</div>
+                    <div class="metric-hint">{hint}</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -613,7 +1103,10 @@ def render_dashboard_preview(dashboard_path: Path) -> None:
 
 
 def render_outputs(excel_path: Path, dashboard_path: Path, temp_path: Path) -> None:
-    st.markdown("### Résultats")
+    st.markdown(
+        '<div class="section-heading"><div class="section-kicker">Livrables</div><h2>Résultats</h2></div>',
+        unsafe_allow_html=True,
+    )
     summary = read_dashboard_summary(excel_path) if excel_path.exists() else None
     if summary:
         render_kpi_cards(summary)
@@ -645,12 +1138,20 @@ def render_outputs(excel_path: Path, dashboard_path: Path, temp_path: Path) -> N
 
 
 def page_run_pipeline(profile: str) -> None:
-    st.markdown("### Nouvelle analyse")
+    profile_label = "Europe" if profile == dealflow_profiles.EUROPE else "LATAM"
     st.markdown(
-        '<div class="status-box">Dépose un Excel source. L’app lance le pipeline complet, puis génère l’Excel final et le dashboard HTML.</div>',
+        f"""
+        <div class="section-heading">
+            <div class="section-kicker">Nouveau dossier</div>
+            <h2>Lancer une qualification</h2>
+        </div>
+        <div class="status-box">
+            <span><strong>Profil {profile_label}</strong> · Pipeline Algo 1 → Algo 2 → Algo 3</span>
+            <span class="status-box-meta">Excel source · .xlsx, .xlsm ou .xls</span>
+        </div>
+        """,
         unsafe_allow_html=True,
     )
-    st.caption(f"Profil actif : {profile}")
 
     active_meta = st.session_state.get("active_job_meta")
     if active_meta:
@@ -697,16 +1198,16 @@ def page_run_pipeline(profile: str) -> None:
                     st.rerun()
 
     uploaded_file = st.file_uploader(
-        "Fichier Excel source",
+        "Portefeuille de startups",
         type=["xlsx", "xlsm", "xls"],
         accept_multiple_files=False,
     )
 
     col1, col2 = st.columns([1, 2])
     with col1:
-        start = st.button("Lancer l'analyse en arrière-plan", type="primary", use_container_width=True)
+        start = st.button("Lancer la qualification", type="primary", use_container_width=True)
     with col2:
-        st.caption("Tu peux fermer l'onglet pendant l'analyse. Le serveur doit rester allumé et le pipeline garde une sauvegarde temporaire.")
+        st.caption("Exécution en arrière-plan avec sauvegarde progressive.")
 
     if not uploaded_file:
         return
@@ -726,10 +1227,17 @@ def page_run_pipeline(profile: str) -> None:
 
 
 def page_dashboard_only() -> None:
-    st.markdown("### Générer seulement le dashboard")
-    st.caption("À utiliser si tu as déjà un fichier `*_pipeline_algo_1_2_3.xlsx`.")
+    st.markdown(
+        """
+        <div class="section-heading">
+            <div class="section-kicker">Visualisation</div>
+            <h2>Générer un dashboard</h2>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
     uploaded_file = st.file_uploader(
-        "Fichier Excel pipeline",
+        "Résultat du pipeline",
         type=["xlsx", "xlsm", "xls"],
         accept_multiple_files=False,
         key="dashboard-only-upload",
@@ -763,7 +1271,15 @@ def iter_run_outputs() -> list[tuple[Path, Path | None]]:
 
 
 def page_history() -> None:
-    st.markdown("### Derniers runs")
+    st.markdown(
+        """
+        <div class="section-heading">
+            <div class="section-kicker">Archives</div>
+            <h2>Historique des analyses</h2>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
     outputs = iter_run_outputs()
     if not outputs:
         st.info("Aucun run disponible pour l'instant.")
@@ -797,18 +1313,18 @@ def page_history() -> None:
 
 def main() -> None:
     st.set_page_config(
-        page_title="Dealflow VINCI",
-        page_icon=None,
+        page_title="Startup Dealflow · Leonard",
+        page_icon=str(ASSETS_DIR / "leonard-mark.png"),
         layout="wide",
-        initial_sidebar_state="expanded",
+        initial_sidebar_state="auto",
     )
     render_css()
-    render_header()
     profile = render_config_status()
+    render_header(profile)
 
     tab_run, tab_dashboard, tab_history = st.tabs([
-        "Lancer une analyse",
-        "Dashboard seul",
+        "Analyse",
+        "Dashboard",
         "Historique",
     ])
     with tab_run:
