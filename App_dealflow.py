@@ -47,22 +47,38 @@ load_streamlit_secrets_to_env()
 PROGRESS_PREFIX = "__PIPELINE_PROGRESS__ "
 
 
-def asset_data_uri(filename: str, mime_type: str) -> str:
+def asset_data_uri(
+    filename: str,
+    mime_type: str,
+    replacements: dict[str, str] | None = None,
+) -> str:
     path = ASSETS_DIR / filename
     try:
-        encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+        data = path.read_bytes()
     except OSError:
         return ""
+    if replacements:
+        text = data.decode("utf-8")
+        for source, target in replacements.items():
+            text = text.replace(source, target)
+        data = text.encode("utf-8")
+    encoded = base64.b64encode(data).decode("ascii")
     return f"data:{mime_type};base64,{encoded}"
 
 
-def inline_svg(filename: str, class_name: str) -> str:
+def inline_svg(
+    filename: str,
+    class_name: str,
+    replacements: dict[str, str] | None = None,
+) -> str:
     path = ASSETS_DIR / filename
     try:
         svg = path.read_text(encoding="utf-8")
     except OSError:
         return ""
     svg = svg.replace("viewbox=", "viewBox=")
+    for source, target in (replacements or {}).items():
+        svg = svg.replace(source, target)
     if 'class="logo-colored"' in svg:
         return svg.replace('class="logo-colored"', f'class="{class_name}"', 1)
     return svg.replace("<svg", f'<svg class="{class_name}"', 1)
@@ -439,6 +455,11 @@ def render_job_monitor(meta: dict, key_prefix: str = "job") -> None:
 
 
 def render_css() -> None:
+    orbit_uri = asset_data_uri(
+        "constellation-orbit.svg",
+        "image/svg+xml",
+        {"#fff": "#4A7CC9"},
+    )
     css = vinci_font_faces() + """
     :root {
         --leonard-navy: #004489;
@@ -446,10 +467,14 @@ def render_css() -> None:
         --leonard-pink: #ff005a;
         --leonard-ink: #102b45;
         --leonard-muted: #617487;
-        --leonard-canvas: #f3f6f8;
-        --leonard-line: #d7e2ea;
+        --leonard-canvas: #eef1f4;
+        --leonard-line: #d5dbe2;
         --leonard-white: #ffffff;
         --leonard-soft-blue: #e9f7fd;
+        --constellation-field: #62636f;
+        --constellation-blue: #4a7cc9;
+        --constellation-violet: #6b4c9a;
+        --constellation-rose: #d64c7e;
     }
 
     html, body, .stApp,
@@ -464,6 +489,23 @@ def render_css() -> None:
         background: var(--leonard-canvas);
         color: var(--leonard-ink);
     }
+    [data-testid="stAppViewContainer"] {
+        position: relative;
+        isolation: isolate;
+        overflow: hidden;
+    }
+    [data-testid="stAppViewContainer"]::before {
+        content: "";
+        position: fixed;
+        right: -18vw;
+        bottom: -38vw;
+        width: min(980px, 82vw);
+        aspect-ratio: 1;
+        background: url("__CONSTELLATION_ORBIT__") center / contain no-repeat;
+        opacity: 0.08;
+        pointer-events: none;
+        z-index: -1;
+    }
     [data-testid="stHeader"] {
         background: transparent;
     }
@@ -471,8 +513,8 @@ def render_css() -> None:
         right: 0.75rem;
     }
     .block-container {
-        max-width: 1280px;
-        padding-top: 1.1rem;
+        max-width: 1360px;
+        padding-top: 0.8rem;
         padding-bottom: 3rem;
     }
     h1, h2,
@@ -565,21 +607,34 @@ def render_css() -> None:
 
     .brand-header {
         position: relative;
-        background: var(--leonard-white);
-        border-top: 4px solid var(--leonard-navy);
-        border-bottom: 1px solid var(--leonard-line);
-        padding: 1.35rem 1.55rem 0;
-        margin-bottom: 1.05rem;
+        background: var(--constellation-field);
+        border-bottom: 4px solid var(--leonard-pink);
+        padding: 1.45rem 1.7rem 1.25rem;
+        margin-bottom: 0.85rem;
         overflow: hidden;
+        min-height: 250px;
     }
     .brand-header::before {
         content: "";
         position: absolute;
-        top: -4px;
-        right: 0;
-        width: 19%;
-        height: 4px;
-        background: var(--leonard-pink);
+        inset: 0 auto auto 0;
+        width: 34%;
+        height: 3px;
+        background: var(--leonard-blue);
+        z-index: 2;
+    }
+    .constellation-orbit {
+        position: absolute;
+        width: 660px;
+        height: 660px;
+        right: -185px;
+        top: -270px;
+        opacity: 0.32;
+        pointer-events: none;
+    }
+    .brand-content {
+        position: relative;
+        z-index: 1;
     }
     .brand-top,
     .brand-main {
@@ -594,15 +649,18 @@ def render_css() -> None:
         height: auto;
         display: block;
     }
+    .brand-logo-light {
+        filter: none;
+    }
     .internal-badge,
     .profile-badge {
         display: inline-flex;
         align-items: center;
         min-height: 28px;
         padding: 0.25rem 0.65rem;
-        border: 1px solid var(--leonard-line);
-        color: var(--leonard-navy);
-        background: var(--leonard-white);
+        border: 1px solid rgba(255, 255, 255, 0.42);
+        color: #ffffff;
+        background: rgba(255, 255, 255, 0.08);
         border-radius: 3px;
         font-size: 0.72rem;
         font-weight: 700;
@@ -611,8 +669,8 @@ def render_css() -> None:
     }
     .brand-main {
         align-items: flex-end;
-        margin-top: 1.05rem;
-        margin-bottom: 1.1rem;
+        margin-top: 1.35rem;
+        margin-bottom: 1.3rem;
     }
     .brand-kicker,
     .section-kicker {
@@ -623,55 +681,92 @@ def render_css() -> None:
         margin: 0 0 0.25rem;
     }
     .brand-title {
-        color: var(--leonard-ink);
-        font-size: 2rem;
+        color: #ffffff;
+        font-size: 2.25rem;
         font-weight: 400;
         line-height: 1.05;
         margin: 0;
     }
+    h1.brand-title {
+        color: #ffffff !important;
+    }
     .brand-subtitle {
-        color: var(--leonard-muted);
+        color: rgba(255, 255, 255, 0.78);
         font-size: 0.9rem;
         margin: 0.4rem 0 0;
     }
     .profile-badge {
-        border-color: var(--leonard-blue);
-        background: var(--leonard-soft-blue);
+        border-color: rgba(0, 180, 255, 0.8);
+        background: rgba(0, 180, 255, 0.14);
+    }
+    .header-index {
+        display: grid;
+        justify-items: end;
+        gap: 0.25rem;
+        color: rgba(255, 255, 255, 0.72);
+        font-size: 0.7rem;
+        text-transform: uppercase;
+    }
+    .header-index strong {
+        color: #ffffff;
+        font-family: "Vinci Serif", Georgia, serif;
+        font-size: 1.55rem;
+        font-weight: 400;
+        line-height: 1;
     }
     .workflow-strip {
+        position: relative;
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
-        border-top: 1px solid var(--leonard-line);
+        gap: 2rem;
+        padding-top: 0.85rem;
+    }
+    .workflow-strip::before {
+        content: "";
+        position: absolute;
+        left: 17px;
+        right: calc(33.333% - 17px);
+        top: 23px;
+        height: 1px;
+        background: rgba(255, 255, 255, 0.32);
     }
     .workflow-step {
+        position: relative;
         display: grid;
-        grid-template-columns: 36px 1fr;
+        grid-template-columns: 34px 1fr;
         align-items: center;
         gap: 0.7rem;
-        min-height: 57px;
-        padding: 0.65rem 1rem 0.65rem 0;
-        border-right: 1px solid var(--leonard-line);
+        min-height: 54px;
+        padding: 0.45rem 0;
     }
     .workflow-step + .workflow-step {
-        padding-left: 1rem;
-    }
-    .workflow-step:last-child {
-        border-right: 0;
+        padding-left: 0;
     }
     .workflow-number {
-        font-family: "Vinci Serif", Georgia, serif;
-        color: var(--leonard-pink);
-        font-size: 1.45rem;
+        position: relative;
+        z-index: 1;
+        display: grid;
+        place-items: center;
+        width: 34px;
+        height: 34px;
+        border: 1px solid rgba(255, 255, 255, 0.65);
+        background: var(--constellation-field);
+        color: #ffffff;
+        font-size: 0.72rem;
         line-height: 1;
+        transform: rotate(45deg);
+    }
+    .workflow-number span {
+        transform: rotate(-45deg);
     }
     .workflow-step strong {
         display: block;
-        color: var(--leonard-navy);
+        color: #ffffff;
         font-size: 0.82rem;
     }
     .workflow-step span:last-child {
         display: block;
-        color: var(--leonard-muted);
+        color: rgba(255, 255, 255, 0.67);
         font-size: 0.72rem;
         margin-top: 0.08rem;
     }
@@ -704,6 +799,70 @@ def render_css() -> None:
         color: var(--leonard-muted);
         font-size: 0.78rem;
         white-space: nowrap;
+    }
+    .workspace-title {
+        margin-bottom: 0.85rem;
+    }
+    .workspace-title strong {
+        display: block;
+        color: var(--leonard-ink);
+        font-size: 1rem;
+    }
+    .workspace-title span {
+        color: var(--leonard-muted);
+        font-size: 0.78rem;
+    }
+    .run-context {
+        min-height: 248px;
+        border-top: 3px solid var(--constellation-violet);
+        background: var(--leonard-white);
+        padding: 1rem 1.05rem;
+    }
+    .run-context-title {
+        color: var(--leonard-ink);
+        font-family: "Vinci Serif", Georgia, serif;
+        font-size: 1.05rem;
+        margin-bottom: 0.8rem;
+    }
+    .context-row {
+        display: grid;
+        grid-template-columns: 26px minmax(0, 1fr);
+        gap: 0.7rem;
+        align-items: center;
+        padding: 0.65rem 0;
+        border-top: 1px solid var(--leonard-line);
+    }
+    .context-row:first-of-type {
+        border-top: 0;
+    }
+    .context-key {
+        display: grid;
+        place-items: center;
+        width: 24px;
+        height: 24px;
+        background: var(--constellation-field);
+        color: #ffffff;
+        font-size: 0.68rem;
+        font-weight: 700;
+    }
+    .context-row strong {
+        display: block;
+        color: var(--leonard-ink);
+        font-size: 0.78rem;
+    }
+    .context-row span:last-child {
+        display: block;
+        color: var(--leonard-muted);
+        font-size: 0.72rem;
+    }
+    .file-ready {
+        border-left: 3px solid var(--leonard-blue);
+        background: var(--leonard-soft-blue);
+        color: var(--leonard-ink);
+        font-size: 0.78rem;
+        margin: 0.7rem 0;
+        padding: 0.65rem 0.75rem;
+        overflow-wrap: anywhere;
     }
 
     .metric-card {
@@ -772,6 +931,13 @@ def render_css() -> None:
         border-color: #d9004d;
         color: var(--leonard-white);
     }
+    .stButton > button[kind="primary"]:disabled {
+        background: #d8dee5;
+        border-color: #d8dee5;
+        color: #718090;
+        opacity: 1;
+        cursor: not-allowed;
+    }
     [data-testid="stFileUploaderDropzone"] {
         min-height: 150px;
         border: 1px dashed var(--leonard-blue);
@@ -807,21 +973,25 @@ def render_css() -> None:
     }
 
     .stTabs [data-baseweb="tab-list"] {
-        gap: 0;
-        border-bottom: 1px solid var(--leonard-line);
-        margin-bottom: 0.3rem;
+        width: fit-content;
+        gap: 4px;
+        padding: 4px;
+        border: 1px solid var(--leonard-line);
+        background: var(--leonard-white);
+        margin-bottom: 0.75rem;
     }
     .stTabs [data-baseweb="tab"] {
-        height: 48px;
-        padding: 0 1.35rem;
-        border-radius: 0 !important;
+        height: 40px;
+        padding: 0 1.2rem;
+        border-radius: 2px !important;
         color: var(--leonard-muted);
         font-weight: 700;
         background: transparent;
     }
     .stTabs [aria-selected="true"] {
-        color: var(--leonard-navy) !important;
-        box-shadow: inset 0 -3px 0 var(--leonard-pink);
+        color: #ffffff !important;
+        background: var(--leonard-navy) !important;
+        box-shadow: none;
     }
     .stTabs [data-baseweb="tab-highlight"] {
         display: none;
@@ -850,7 +1020,8 @@ def render_css() -> None:
             padding: 0.65rem 0.85rem 2rem;
         }
         .brand-header {
-            padding: 1rem 1rem 0;
+            min-height: 0;
+            padding: 1rem 1rem 1.15rem;
         }
         .brand-top,
         .brand-main {
@@ -866,18 +1037,49 @@ def render_css() -> None:
         .brand-title {
             font-size: 1.65rem;
         }
+        .constellation-orbit {
+            width: 470px;
+            height: 470px;
+            right: -260px;
+            top: -170px;
+            opacity: 0.24;
+        }
+        .header-index {
+            justify-items: start;
+        }
         .workflow-strip {
-            grid-template-columns: 1fr;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.45rem;
+            padding-top: 0.45rem;
+        }
+        .workflow-strip::before {
+            left: 14px;
+            right: calc(33.333% - 14px);
+            top: 19px;
+            bottom: auto;
+            width: auto;
+            height: 1px;
         }
         .workflow-step,
         .workflow-step + .workflow-step {
-            min-height: 48px;
-            padding: 0.5rem 0;
+            grid-template-columns: 28px minmax(0, 1fr);
+            align-items: start;
+            gap: 0.5rem;
+            min-height: 62px;
+            padding: 0.3rem 0;
             border-right: 0;
-            border-bottom: 1px solid var(--leonard-line);
-        }
-        .workflow-step:last-child {
             border-bottom: 0;
+        }
+        .workflow-number {
+            width: 28px;
+            height: 28px;
+            font-size: 0.64rem;
+        }
+        .workflow-step strong {
+            font-size: 0.72rem;
+        }
+        .workflow-step > span:last-child > span:last-child {
+            display: none;
         }
         .status-box {
             align-items: flex-start;
@@ -889,42 +1091,61 @@ def render_css() -> None:
         .stTabs [data-baseweb="tab"] {
             padding: 0 0.7rem;
         }
+        .stTabs [data-baseweb="tab-list"] {
+            width: 100%;
+        }
     }
-    """
+    """.replace("__CONSTELLATION_ORBIT__", orbit_uri)
     st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
 
 
 def render_header(profile: str) -> None:
-    logo_svg = inline_svg("leonard-vinci-logo.svg", "brand-logo")
+    logo_svg = inline_svg(
+        "leonard-vinci-logo.svg",
+        "brand-logo brand-logo-light",
+        {
+            "#c41d6d": "#ffffff",
+            "#00b4ff": "#ffffff",
+            "#004489": "#ffffff",
+            "#ff005a": "#ffffff",
+        },
+    )
+    orbit_svg = inline_svg("constellation-orbit.svg", "constellation-orbit")
     profile_label = "Europe" if profile == dealflow_profiles.EUROPE else "LATAM"
     logo_markup = logo_svg or '<div class="brand-title">Leonard / VINCI</div>'
     st.markdown(
         f"""
         <header class="brand-header">
-            <div class="brand-top">
-                {logo_markup}
-                <span class="internal-badge">Usage interne</span>
-            </div>
-            <div class="brand-main">
-                <div>
-                    <div class="brand-kicker">Dealflow intelligence</div>
-                    <h1 class="brand-title">Startup Dealflow</h1>
-                    <p class="brand-subtitle">Qualification stratégique pour les métiers et programmes Leonard.</p>
+            {orbit_svg}
+            <div class="brand-content">
+                <div class="brand-top">
+                    {logo_markup}
+                    <span class="internal-badge">Usage interne</span>
                 </div>
-                <span class="profile-badge">Profil {profile_label}</span>
-            </div>
-            <div class="workflow-strip" aria-label="Parcours de qualification">
-                <div class="workflow-step">
-                    <span class="workflow-number">01</span>
-                    <span><strong>Éligibilité</strong><span>Premier filtre</span></span>
+                <div class="brand-main">
+                    <div>
+                        <div class="brand-kicker">Dealflow constellation</div>
+                        <h1 class="brand-title">Startup Dealflow</h1>
+                        <p class="brand-subtitle">Qualification stratégique pour les métiers et programmes Leonard.</p>
+                    </div>
+                    <div class="header-index">
+                        <span class="profile-badge">Profil {profile_label}</span>
+                        <span><strong>3</strong> niveaux d'analyse</span>
+                    </div>
                 </div>
-                <div class="workflow-step">
-                    <span class="workflow-number">02</span>
-                    <span><strong>Alignement</strong><span>Enjeux stratégiques</span></span>
-                </div>
-                <div class="workflow-step">
-                    <span class="workflow-number">03</span>
-                    <span><strong>Orientation</strong><span>Seed · Catalyst · Matériaux</span></span>
+                <div class="workflow-strip" aria-label="Parcours de qualification">
+                    <div class="workflow-step">
+                        <span class="workflow-number"><span>01</span></span>
+                        <span><strong>Éligibilité</strong><span>Premier filtre</span></span>
+                    </div>
+                    <div class="workflow-step">
+                        <span class="workflow-number"><span>02</span></span>
+                        <span><strong>Alignement</strong><span>Enjeux stratégiques</span></span>
+                    </div>
+                    <div class="workflow-step">
+                        <span class="workflow-number"><span>03</span></span>
+                        <span><strong>Orientation</strong><span>Seed · Catalyst · Matériaux</span></span>
+                    </div>
                 </div>
             </div>
         </header>
@@ -1162,9 +1383,10 @@ def page_run_pipeline(profile: str) -> None:
                 st.rerun()
         return
 
+    recent_jobs = iter_job_metas(limit=20)
     running_jobs = [
         meta
-        for meta in iter_job_metas(limit=10)
+        for meta in recent_jobs
         if job_state(meta) in {"running", "stopping"}
     ]
     if running_jobs:
@@ -1177,11 +1399,7 @@ def page_run_pipeline(profile: str) -> None:
                     st.session_state["active_job_meta"] = meta
                     st.rerun()
 
-    resumable_jobs = [
-        meta
-        for meta in iter_job_metas(limit=20)
-        if can_resume_job(meta)
-    ]
+    resumable_jobs = [meta for meta in recent_jobs if can_resume_job(meta)]
     if resumable_jobs:
         st.markdown("### Analyses interrompues")
         for index, meta in enumerate(resumable_jobs[:5]):
@@ -1197,22 +1415,62 @@ def page_run_pipeline(profile: str) -> None:
                     st.session_state["active_job_meta"] = resumed_meta
                     st.rerun()
 
-    uploaded_file = st.file_uploader(
-        "Portefeuille de startups",
-        type=["xlsx", "xlsm", "xls"],
-        accept_multiple_files=False,
-    )
+    workspace, context = st.columns([1.65, 0.75], gap="large")
+    with workspace:
+        with st.container(border=True):
+            st.markdown(
+                """
+                <div class="workspace-title">
+                    <strong>Source à analyser</strong>
+                    <span>Portefeuille Excel conservé avec toutes ses colonnes.</span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            uploaded_file = st.file_uploader(
+                "Portefeuille de startups",
+                type=["xlsx", "xlsm", "xls"],
+                accept_multiple_files=False,
+                label_visibility="collapsed",
+            )
+            if uploaded_file:
+                st.markdown(
+                    f'<div class="file-ready"><strong>Fichier prêt</strong><br>{html.escape(uploaded_file.name)}</div>',
+                    unsafe_allow_html=True,
+                )
+            start = st.button(
+                "Lancer la qualification",
+                type="primary",
+                use_container_width=True,
+                disabled=uploaded_file is None,
+            )
+            st.caption("Exécution en arrière-plan avec sauvegarde progressive.")
 
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        start = st.button("Lancer la qualification", type="primary", use_container_width=True)
-    with col2:
-        st.caption("Exécution en arrière-plan avec sauvegarde progressive.")
+    with context:
+        st.markdown(
+            f"""
+            <aside class="run-context">
+                <div class="run-context-title">Contexte du run</div>
+                <div class="context-row">
+                    <span class="context-key">01</span>
+                    <span><strong>Profil {profile_label}</strong><span>Référentiel régional actif</span></span>
+                </div>
+                <div class="context-row">
+                    <span class="context-key">02</span>
+                    <span><strong>{len(running_jobs)} analyse(s) active(s)</strong><span>Suivi des processus actifs</span></span>
+                </div>
+                <div class="context-row">
+                    <span class="context-key">03</span>
+                    <span><strong>{len(resumable_jobs)} reprise(s) disponible(s)</strong><span>Sauvegardes détectées</span></span>
+                </div>
+            </aside>
+            """,
+            unsafe_allow_html=True,
+        )
 
     if not uploaded_file:
         return
 
-    st.write(f"Fichier prêt : `{uploaded_file.name}`")
     if start:
         run_dir = RUNS_DIR / run_dir_name(uploaded_file.name)
         input_path = save_uploaded_file(uploaded_file, run_dir)

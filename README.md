@@ -83,7 +83,9 @@ Interface web interne pour l'equipe. Elle permet de :
 
 L'interface reprend l'identite Leonard / VINCI : logo officiel, couleurs
 `#004489`, `#00B4FF` et `#FF005A`, titres en `Vinci Serif` et interface en
-`Vinci Sans`. Les ressources locales necessaires sont conservees dans
+`Vinci Sans`. Sa structure visuelle s'inspire de la Constellation des tendances
+2026 : fond orbital discret, parcours Algo1 -> Algo2 -> Algo3 et espace de
+pilotage en deux zones. Les ressources locales necessaires sont conservees dans
 `assets/` afin que le rendu reste stable sur Streamlit Cloud.
 
 Installation sur une machine interne :

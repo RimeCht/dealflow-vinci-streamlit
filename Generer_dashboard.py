@@ -17,14 +17,25 @@ TEMP_MARKER = "_sauvegarde_temp"
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 
 
-def asset_data_uri(filename: str, mime_type: str, *, fix_svg: bool = False) -> str:
+def asset_data_uri(
+    filename: str,
+    mime_type: str,
+    *,
+    fix_svg: bool = False,
+    replacements: dict[str, str] | None = None,
+) -> str:
     path = ASSETS_DIR / filename
     try:
         data = path.read_bytes()
     except OSError:
         return ""
-    if fix_svg:
-        data = data.decode("utf-8").replace("viewbox=", "viewBox=").encode("utf-8")
+    if fix_svg or replacements:
+        text = data.decode("utf-8")
+        if fix_svg:
+            text = text.replace("viewbox=", "viewBox=")
+        for source, target in (replacements or {}).items():
+            text = text.replace(source, target)
+        data = text.encode("utf-8")
     return f"data:{mime_type};base64,{base64.b64encode(data).decode('ascii')}"
 
 
@@ -515,7 +526,24 @@ def build_summary(records: list[dict], input_file: Path, sheet_name: str) -> dic
 def build_dashboard_html(data: dict) -> str:
     data_json = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
     title = escape(f"Dashboard dealflow - {data['summary']['source_file']}")
-    logo_uri = asset_data_uri("leonard-vinci-logo.svg", "image/svg+xml", fix_svg=True)
+    logo_uri = asset_data_uri(
+        "leonard-vinci-logo.svg",
+        "image/svg+xml",
+        fix_svg=True,
+        replacements={
+            "#c41d6d": "#ffffff",
+            "#00b4ff": "#ffffff",
+            "#004489": "#ffffff",
+            "#ff005a": "#ffffff",
+        },
+    )
+    orbit_uri = asset_data_uri("constellation-orbit.svg", "image/svg+xml", fix_svg=True)
+    orbit_blue_uri = asset_data_uri(
+        "constellation-orbit.svg",
+        "image/svg+xml",
+        fix_svg=True,
+        replacements={"#fff": "#4A7CC9"},
+    )
     template = r"""<!doctype html>
 <html lang="fr">
 <head>
@@ -538,6 +566,10 @@ def build_dashboard_html(data: dict) -> str:
       --amber: #b7791f;
       --red: #b23b3b;
       --violet: #6950a1;
+      --constellation-field: #62636f;
+      --constellation-blue: #4a7cc9;
+      --constellation-violet: #6b4c9a;
+      --constellation-rose: #d64c7e;
     }
     * { box-sizing: border-box; }
     body {
@@ -547,28 +579,59 @@ def build_dashboard_html(data: dict) -> str:
       font-family: "Vinci Sans", Arial, sans-serif;
       line-height: 1.45;
       letter-spacing: 0;
+      position: relative;
+      isolation: isolate;
+      overflow-x: hidden;
     }
-    .shell { max-width: 1440px; margin: 0 auto; padding: 24px; }
+    body::before {
+      content: "";
+      position: fixed;
+      right: -260px;
+      bottom: -360px;
+      width: min(980px, 80vw);
+      aspect-ratio: 1;
+      background: url("__ORBIT_BLUE_URI__") center / contain no-repeat;
+      opacity: 0.08;
+      pointer-events: none;
+      z-index: -1;
+    }
+    .shell { max-width: 1440px; margin: 0 auto; padding: 20px 24px 32px; }
     header {
+      position: relative;
       display: flex;
       justify-content: space-between;
       gap: 20px;
-      align-items: center;
+      align-items: flex-end;
       margin-bottom: 18px;
-      padding: 18px 20px;
-      background: var(--panel);
-      border-top: 4px solid var(--blue);
-      border-bottom: 1px solid var(--line);
+      padding: 22px 24px;
+      min-height: 154px;
+      overflow: hidden;
+      background: var(--constellation-field);
+      border-top: 3px solid var(--cyan);
+      border-bottom: 4px solid var(--pink);
     }
-    .brand-lockup { display: flex; align-items: center; gap: 20px; }
-    .brand-lockup img { display: block; width: 180px; height: auto; }
-    .brand-copy { padding-left: 20px; border-left: 1px solid var(--line); }
+    .header-orbit {
+      position: absolute;
+      width: 520px;
+      height: 520px;
+      right: -115px;
+      top: -250px;
+      opacity: 0.3;
+      pointer-events: none;
+    }
+    .brand-lockup { position: relative; z-index: 1; display: flex; align-items: center; gap: 20px; }
+    .brand-lockup img:not(.header-orbit) { display: block; width: 180px; height: auto; }
+    .brand-copy { padding-left: 20px; border-left: 1px solid rgba(255,255,255,0.35); }
+    .brand-kicker { color: var(--cyan); font-size: 11px; font-weight: 700; text-transform: uppercase; margin-bottom: 4px; }
     h1, .kpi-value, .step-value { font-family: "Vinci Serif", Georgia, serif; }
-    h1 { margin: 0; font-size: 28px; font-weight: 400; letter-spacing: 0; }
+    h1 { margin: 0; color: #ffffff; font-size: 28px; font-weight: 400; letter-spacing: 0; }
     h2 { margin: 0 0 14px; font-size: 16px; font-weight: 700; letter-spacing: 0; color: var(--blue); }
     p { margin: 0; }
     .meta { color: var(--muted); font-size: 13px; margin-top: 6px; }
+    header .meta { color: rgba(255,255,255,0.72); }
     .toolbar {
+      position: relative;
+      z-index: 1;
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
@@ -608,22 +671,17 @@ def build_dashboard_html(data: dict) -> str:
       gap: 10px;
     }
     .step {
-      border: 1px solid var(--line);
-      border-radius: 3px;
-      padding: 14px;
+      border: 0;
+      border-left: 4px solid var(--step-color, var(--green));
+      border-radius: 0;
+      padding: 10px 12px;
       min-height: 118px;
       position: relative;
       overflow: hidden;
-      background: var(--panel);
+      background: transparent;
     }
     .step::before {
-      content: "";
-      position: absolute;
-      left: 0;
-      top: 0;
-      width: 5px;
-      height: 100%;
-      background: var(--step-color, var(--green));
+      display: none;
     }
     .step-label { color: var(--muted); font-size: 12px; }
     .step-value { font-weight: 820; font-size: 28px; margin: 8px 0 2px; }
@@ -713,9 +771,11 @@ def build_dashboard_html(data: dict) -> str:
 <body>
   <div class="shell">
     <header>
+      <img class="header-orbit" src="__ORBIT_URI__" alt="">
       <div class="brand-lockup">
         <img src="__LOGO_URI__" alt="Leonard, powered by VINCI">
         <div class="brand-copy">
+          <div class="brand-kicker">Dealflow constellation</div>
           <h1>Dashboard dealflow startups</h1>
           <p class="meta"><span id="sourceFile"></span> · généré le <span id="generatedAt"></span> · sheet source <span id="sourceSheet"></span></p>
         </div>
@@ -779,7 +839,7 @@ def build_dashboard_html(data: dict) -> str:
 
   <script>
     const DATA = __DASHBOARD_DATA__;
-    const COLORS = ["#004489", "#00b4ff", "#ff005a", "#00857c", "#b7791f", "#b23b3b", "#6950a1", "#617487"];
+    const COLORS = ["#4a7cc9", "#6b4c9a", "#d64c7e", "#00b4ff", "#ff005a", "#00857c", "#b7791f", "#617487"];
     const records = DATA.records || [];
 
     function esc(value) {
@@ -821,7 +881,7 @@ def build_dashboard_html(data: dict) -> str:
     }
 
     function renderFunnel() {
-      const colors = ["#004489", "#00b4ff", "#ff005a", "#00857c", "#6950a1"];
+      const colors = ["#4a7cc9", "#6b4c9a", "#d64c7e", "#00b4ff", "#ff005a"];
       document.getElementById("funnel").innerHTML = (DATA.summary.funnel || []).map((step, index) => `
         <article class="step" style="--step-color:${colors[index % colors.length]}">
           <div class="step-label">${esc(step.label)}</div>
@@ -992,6 +1052,8 @@ def build_dashboard_html(data: dict) -> str:
         .replace("__TITLE__", title)
         .replace("__VINCI_FONT_CSS__", dashboard_font_css())
         .replace("__LOGO_URI__", logo_uri)
+        .replace("__ORBIT_URI__", orbit_uri)
+        .replace("__ORBIT_BLUE_URI__", orbit_blue_uri)
         .replace("__DASHBOARD_DATA__", data_json)
     )
 
