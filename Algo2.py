@@ -21,6 +21,7 @@ from tqdm import tqdm
 import semantic_prefilter
 import learning_memory
 import dealflow_profiles
+import excel_styling
 
 
 # ============================================================
@@ -3965,6 +3966,9 @@ def save_results(df_original: pd.DataFrame, results: list[dict], output_file: Pa
                 sheet_df = final_df.iloc[0:0]
 
             sheet_df.to_excel(writer, sheet_name=sheet_name, index=False)
+
+        if "sauvegarde_temp" not in output_file.stem.lower():
+            excel_styling.style_workbook(writer, title="Résultats Algo 2 - Alignement stratégique")
 
 
 def get_saved_result_value(row: pd.Series, result_column: str, original_columns: set[str]):

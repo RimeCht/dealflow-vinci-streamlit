@@ -278,6 +278,22 @@ def start_background_pipeline(input_path: Path, profile: str) -> dict:
     return meta
 
 
+def can_resume_job(meta: dict) -> bool:
+    input_path = Path(str(meta.get("input_path", "")))
+    temp_path = Path(str(meta.get("temp_path", "")))
+    return (
+        job_state(meta) in {"error", "stopped"}
+        and input_path.is_file()
+        and temp_path.is_file()
+    )
+
+
+def resume_background_job(meta: dict) -> dict:
+    input_path = Path(str(meta.get("input_path", "")))
+    profile = str(meta.get("profile") or os.getenv("DEALFLOW_PROFILE", "EUROPE"))
+    return start_background_pipeline(input_path, profile)
+
+
 def iter_job_metas(limit: int = 20) -> list[dict]:
     if not RUNS_DIR.exists():
         return []
@@ -356,6 +372,19 @@ def render_job_monitor(meta: dict, key_prefix: str = "job") -> None:
     else:
         st.warning("Le job n'est plus actif et le fichier final n'est pas encore disponible.")
         render_outputs(excel_path, dashboard_path, temp_path)
+
+    if can_resume_job(meta):
+        if st.button(
+            "Reprendre depuis la sauvegarde",
+            key=f"{key_prefix}-resume",
+            type="primary",
+            use_container_width=True,
+        ):
+            resumed_meta = resume_background_job(meta)
+            st.session_state["active_job_meta"] = resumed_meta
+            st.success("Reprise lancée depuis la dernière ligne sauvegardée.")
+            time.sleep(1)
+            st.rerun()
 
     with st.expander("Logs techniques", expanded=False):
         st.code(read_log_tail(log_path, 50000) or "Aucun log disponible.", language="text")
@@ -626,7 +655,7 @@ def page_run_pipeline(profile: str) -> None:
     active_meta = st.session_state.get("active_job_meta")
     if active_meta:
         render_job_monitor(active_meta, "active")
-        if job_state(active_meta) != "running":
+        if job_state(active_meta) not in {"running", "stopping"}:
             if st.button("Lancer une nouvelle analyse", use_container_width=True):
                 st.session_state.pop("active_job_meta", None)
                 st.rerun()
@@ -645,6 +674,26 @@ def page_run_pipeline(profile: str) -> None:
                 st.caption(f"Profil : {meta.get('profile', '')} · démarré le {meta.get('started_at', '')}")
                 if st.button("Suivre ce run", key=f"follow-running-{index}", use_container_width=True):
                     st.session_state["active_job_meta"] = meta
+                    st.rerun()
+
+    resumable_jobs = [
+        meta
+        for meta in iter_job_metas(limit=20)
+        if can_resume_job(meta)
+    ]
+    if resumable_jobs:
+        st.markdown("### Analyses interrompues")
+        for index, meta in enumerate(resumable_jobs[:5]):
+            with st.container(border=True):
+                st.write(f"**{job_display_name(meta)}**")
+                st.caption(f"Profil : {meta.get('profile', '')} · sauvegarde disponible")
+                if st.button(
+                    "Reprendre ce run",
+                    key=f"resume-stopped-{index}",
+                    use_container_width=True,
+                ):
+                    resumed_meta = resume_background_job(meta)
+                    st.session_state["active_job_meta"] = resumed_meta
                     st.rerun()
 
     uploaded_file = st.file_uploader(

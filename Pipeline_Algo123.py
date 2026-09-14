@@ -14,6 +14,7 @@ import Algo2
 import Algo3
 import dealflow_profiles
 import Generer_dashboard
+import excel_styling
 
 
 load_dotenv()
@@ -572,32 +573,6 @@ def build_team_summary(final_df: pd.DataFrame) -> pd.DataFrame:
     return summary.reset_index(drop=True)
 
 
-def format_summary_sheet(writer: pd.ExcelWriter, sheet_name: str, df: pd.DataFrame) -> None:
-    worksheet = writer.sheets.get(sheet_name)
-    if worksheet is None or df.empty:
-        return
-
-    worksheet.freeze_panes = "A2"
-    worksheet.auto_filter.ref = worksheet.dimensions
-    for column_cells in worksheet.columns:
-        column_letter = column_cells[0].column_letter
-        header = clean_text(column_cells[0].value)
-        if header in {
-            "algo1_raison",
-            "algo2_raison",
-            "algo3_raison",
-            "raison_arret_ou_passage",
-            "prochaine_action",
-            "profile_exclusion_matches",
-        }:
-            width = 55
-        elif header in {"startup", "site_web"}:
-            width = 28
-        else:
-            width = min(max(len(header) + 2, 12), 30)
-        worksheet.column_dimensions[column_letter].width = width
-
-
 def save_results(results: list[dict], output_file: Path) -> None:
     final_df = pd.DataFrame(results)
     if final_df.empty:
@@ -613,7 +588,6 @@ def save_results(results: list[dict], output_file: Path) -> None:
 
     with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
         team_summary_df.to_excel(writer, sheet_name="Synthese equipe", index=False)
-        format_summary_sheet(writer, "Synthese equipe", team_summary_df)
         final_df.to_excel(writer, sheet_name="Toutes les startups", index=False)
         sheet_safe(final_df, status.eq("ARRETEE_ALGO1_A_VERIFIER")).to_excel(
             writer,
@@ -660,6 +634,13 @@ def save_results(results: list[dict], output_file: Path) -> None:
             else:
                 mask = algo3_orientation.eq(orientation)
             sheet_safe(final_df, mask).to_excel(writer, sheet_name=sheet_name, index=False)
+
+        if "sauvegarde_temp" not in output_file.stem.lower():
+            excel_styling.style_workbook(
+                writer,
+                include_guide=True,
+                title="Résultats du pipeline Algo 1 → Algo 2 → Algo 3",
+            )
 
 
 def generate_dashboard_if_enabled(output_file: Path) -> None:

@@ -110,6 +110,9 @@ le pipeline continue en arriere-plan, ecrit `pipeline.log` et `run_status.json`
 dans le dossier du run, puis l'app peut reprendre le suivi via "Analyses en cours".
 Le bouton `Arreter l'analyse` demande l'arret du job et conserve la derniere
 sauvegarde temporaire disponible.
+Pour continuer, ouvre `Analyses interrompues`, puis clique sur
+`Reprendre ce run`. Le pipeline repart apres la derniere ligne presente dans
+la sauvegarde temporaire, avec le meme profil Europe ou LATAM.
 En revanche, si la machine ou le serveur qui heberge Streamlit s'eteint, le job
 s'arrete aussi.
 
@@ -299,6 +302,18 @@ Sheets principales du pipeline :
 `Synthese equipe` est la vue courte pour l'equipe : decision Algo1 et raison,
 decision Algo2 et raison, orientation Algo3 et raison, statut pipeline,
 prochaine action et principaux champs/scores utiles.
+
+Les fichiers finaux disposent aussi d'une mise en forme de lecture :
+
+- onglet `Mode d'emploi` avec la légende et l'action attendue ;
+- vert pour les résultats validés, orange pour les vérifications et rouge pour
+  les rejets ;
+- couleurs distinctes pour Seed, Catalyst et Matériaux ;
+- filtres, volets figés, liens cliquables et colonnes adaptées au contenu ;
+- échelle colorée sur les scores de confiance.
+
+La mise en forme complète n'est pas appliquée aux sauvegardes temporaires afin
+de conserver des sauvegardes rapides pendant l'analyse.
 
 ### `Generer_dashboard.py`
 
