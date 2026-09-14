@@ -595,46 +595,47 @@ def build_dashboard_html(data: dict) -> str:
       pointer-events: none;
       z-index: -1;
     }
-    .shell { max-width: 1440px; margin: 0 auto; padding: 20px 24px 32px; }
+    .shell { max-width: 1400px; margin: 0 auto; padding: 16px 20px 32px; }
     header {
       position: relative;
       display: flex;
       justify-content: space-between;
       gap: 20px;
-      align-items: flex-end;
-      margin-bottom: 18px;
-      padding: 22px 24px;
-      min-height: 154px;
+      align-items: center;
+      margin-bottom: 14px;
+      padding: 16px 18px;
+      min-height: 108px;
       overflow: hidden;
       background: var(--constellation-field);
-      border-top: 3px solid var(--cyan);
-      border-bottom: 4px solid var(--pink);
+      border-top: 2px solid var(--cyan);
+      border-bottom: 2px solid var(--pink);
+      border-radius: 6px;
     }
     .header-orbit {
       position: absolute;
-      width: 520px;
-      height: 520px;
-      right: -115px;
-      top: -250px;
-      opacity: 0.3;
+      width: 420px;
+      height: 420px;
+      right: -90px;
+      top: -220px;
+      opacity: 0.22;
       pointer-events: none;
     }
-    .brand-lockup { position: relative; z-index: 1; display: flex; align-items: center; gap: 20px; }
-    .brand-lockup img:not(.header-orbit) { display: block; width: 180px; height: auto; }
-    .brand-copy { padding-left: 20px; border-left: 1px solid rgba(255,255,255,0.35); }
-    .brand-kicker { color: var(--cyan); font-size: 11px; font-weight: 700; text-transform: uppercase; margin-bottom: 4px; }
+    .brand-lockup { position: relative; z-index: 1; display: flex; align-items: center; gap: 16px; min-width: 0; }
+    .brand-lockup img:not(.header-orbit) { display: block; width: 146px; height: auto; flex-shrink: 0; }
+    .brand-copy { min-width: 0; padding-left: 16px; border-left: 1px solid rgba(255,255,255,0.35); }
+    .brand-kicker { color: var(--cyan); font-size: 10px; font-weight: 700; text-transform: uppercase; margin-bottom: 2px; }
     h1, .kpi-value, .step-value { font-family: "Vinci Serif", Georgia, serif; }
-    h1 { margin: 0; color: #ffffff; font-size: 28px; font-weight: 400; letter-spacing: 0; }
-    h2 { margin: 0 0 14px; font-size: 16px; font-weight: 700; letter-spacing: 0; color: var(--blue); }
+    h1 { margin: 0; color: #ffffff; font-size: 24px; font-weight: 400; letter-spacing: 0; }
+    h2 { margin: 0 0 12px; font-size: 15px; font-weight: 700; letter-spacing: 0; color: var(--blue); }
     p { margin: 0; }
-    .meta { color: var(--muted); font-size: 13px; margin-top: 6px; }
+    .meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
     header .meta { color: rgba(255,255,255,0.72); }
     .toolbar {
       position: relative;
       z-index: 1;
       display: flex;
       flex-wrap: wrap;
-      gap: 8px;
+      gap: 6px;
       justify-content: flex-end;
     }
     button, input, select {
@@ -642,29 +643,30 @@ def build_dashboard_html(data: dict) -> str:
       background: var(--panel);
       color: var(--ink);
       min-height: 38px;
-      border-radius: 3px;
+      border-radius: 5px;
       font: inherit;
       font-size: 13px;
     }
-    button { padding: 0 12px; cursor: pointer; }
+    button { padding: 0 12px; cursor: pointer; transition: border-color 150ms ease, color 150ms ease, background 150ms ease; }
     button:hover { border-color: var(--pink); color: var(--pink); }
     #exportCsv { color: #ffffff; background: var(--pink); border-color: var(--pink); }
     input, select { padding: 0 10px; min-width: 190px; }
-    .grid { display: grid; gap: 14px; }
-    .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 14px; }
+    .grid { display: grid; gap: 12px; }
+    .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 12px; }
     .card {
       background: var(--panel);
       border: 1px solid var(--line);
-      border-radius: 3px;
+      border-radius: 6px;
+      box-shadow: 0 1px 3px rgba(16,43,69,0.05);
     }
-    .kpi { padding: 14px 14px 14px 18px; min-height: 104px; border-left: 4px solid var(--cyan); }
+    .kpi { padding: 12px 14px 12px 17px; min-height: 92px; border-left: 3px solid var(--cyan); }
     .kpi:nth-child(3n+2) { border-left-color: var(--pink); }
     .kpi:nth-child(3n) { border-left-color: var(--blue); }
-    .kpi-value { font-size: 30px; font-weight: 400; margin-top: 8px; }
+    .kpi-value { font-size: 27px; font-weight: 400; margin-top: 5px; }
     .kpi-label { font-size: 12px; color: var(--muted); text-transform: uppercase; }
     .kpi-hint { color: var(--muted); font-size: 12px; margin-top: 2px; }
     .main { grid-template-columns: 1.25fr 0.75fr; align-items: start; }
-    .panel { padding: 16px; }
+    .panel { padding: 16px 17px; }
     .funnel {
       display: grid;
       grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -686,7 +688,7 @@ def build_dashboard_html(data: dict) -> str:
     .step-label { color: var(--muted); font-size: 12px; }
     .step-value { font-weight: 820; font-size: 28px; margin: 8px 0 2px; }
     .step-sub { color: var(--muted); font-size: 12px; }
-    .charts { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 14px; }
+    .charts { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 12px; }
     .bar-row {
       display: grid;
       grid-template-columns: minmax(110px, 1fr) 4fr 40px;
@@ -699,7 +701,7 @@ def build_dashboard_html(data: dict) -> str:
     .bar-fill { height: 100%; border-radius: 2px; background: var(--bar-color, var(--blue)); min-width: 2px; }
     .label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
     .value { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
-    .split { grid-template-columns: 1fr 1fr; margin-top: 14px; align-items: start; }
+    .split { grid-template-columns: 1fr 1fr; margin-top: 12px; align-items: start; }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
     th {
       text-align: left;
@@ -715,7 +717,7 @@ def build_dashboard_html(data: dict) -> str:
       display: inline-flex;
       align-items: center;
       min-height: 24px;
-      border-radius: 3px;
+      border-radius: 5px;
       padding: 2px 9px;
       font-size: 12px;
       border: 1px solid var(--line);
@@ -739,7 +741,7 @@ def build_dashboard_html(data: dict) -> str:
       overflow: auto;
       max-height: 620px;
       border: 1px solid var(--line);
-      border-radius: 3px;
+      border-radius: 5px;
     }
     .wide-table table { min-width: 1360px; }
     .wide-table thead th {
@@ -748,7 +750,7 @@ def build_dashboard_html(data: dict) -> str:
       background: #f5f9fc;
       z-index: 1;
     }
-    .footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
+    .footer { color: var(--muted); font-size: 12px; margin-top: 16px; }
     @media (max-width: 1100px) {
       .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
       .main, .split { grid-template-columns: 1fr; }

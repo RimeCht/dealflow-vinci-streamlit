@@ -144,6 +144,7 @@ def download_button(label: str, path: Path, mime: str, key: str) -> None:
         data=path.read_bytes(),
         file_name=path.name,
         mime=mime,
+        icon=":material/download:",
         key=key,
         use_container_width=True,
     )
@@ -379,6 +380,57 @@ def job_display_name(meta: dict) -> str:
     return Path(str(meta.get("meta_path", ""))).parent.name or "run"
 
 
+def render_run_phase_stepper(meta: dict, state: str, stage: str) -> None:
+    stage_key = stage.casefold()
+    if state == "done":
+        active_index = 3
+    elif "dashboard" in stage_key or "génération" in stage_key:
+        active_index = 2
+    elif "analyse" in stage_key or "termin" in stage_key:
+        active_index = 1
+    else:
+        active_index = 0
+
+    state_labels = {
+        "running": "En cours",
+        "stopping": "Arrêt en cours",
+        "done": "Terminée",
+        "error": "Erreur",
+        "stopped": "Interrompue",
+    }
+    phases = ["Préparation", "Qualification", "Livrables"]
+    phase_markup = []
+    for index, label in enumerate(phases):
+        if active_index > index:
+            phase_state = "done"
+            marker = "✓"
+        elif active_index == index and state != "done":
+            phase_state = "error" if state in {"error", "stopped"} else "active"
+            marker = str(index + 1)
+        else:
+            phase_state = "upcoming"
+            marker = str(index + 1)
+        phase_markup.append(
+            f'<div class="run-phase {phase_state}"><span class="run-phase-marker">{marker}</span>'
+            f'<span>{label}</span></div>'
+        )
+
+    filename = html.escape(job_display_name(meta))
+    state_label = state_labels.get(state, state.title())
+    st.markdown(
+        f"""
+        <div class="job-overview">
+            <div class="job-overview-top">
+                <div><span class="job-eyebrow">Traitement du portefeuille</span><strong>{filename}</strong></div>
+                <span class="job-state-badge {state}">{state_label}</span>
+            </div>
+            <div class="run-phase-stepper">{''.join(phase_markup)}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def render_job_monitor(meta: dict, key_prefix: str = "job") -> None:
     state = job_state(meta)
     excel_path = Path(meta.get("excel_path", ""))
@@ -404,6 +456,8 @@ def render_job_monitor(meta: dict, key_prefix: str = "job") -> None:
         elapsed = "calcul en cours"
         eta = "calcul en cours"
 
+    render_run_phase_stepper(meta, state, stage)
+
     if state == "done":
         ratio = 1.0
         percent = 100.0
@@ -413,13 +467,26 @@ def render_job_monitor(meta: dict, key_prefix: str = "job") -> None:
     elif state in {"running", "stopping"}:
         st.progress(ratio, text=f"{stage} - {percent:.1f}%")
         st.markdown(
-            f"**{done}/{total} startups traitées** · temps écoulé : `{elapsed}` · temps restant estimé : `{eta}`"
+            f"""
+            <div class="progress-facts">
+                <div><span>Progression</span><strong>{done}/{total}</strong></div>
+                <div><span>Temps écoulé</span><strong>{elapsed}</strong></div>
+                <div><span>Temps restant estimé</span><strong>{eta}</strong></div>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
         if state == "stopping":
             st.warning("Arrêt demandé. Le job est en train de se fermer.")
         else:
             st.info("Analyse en cours en arrière-plan. Tu peux fermer cet onglet, puis revenir dans l'app pour reprendre le suivi.")
-            if st.button("Arrêter l'analyse", key=f"{key_prefix}-stop", type="secondary", use_container_width=True):
+            if st.button(
+                "Arrêter l'analyse",
+                key=f"{key_prefix}-stop",
+                type="secondary",
+                icon=":material/stop_circle:",
+                use_container_width=True,
+            ):
                 if stop_background_job(meta):
                     refreshed = read_json_file(Path(str(meta.get("meta_path", ""))))
                     st.session_state["active_job_meta"] = refreshed or meta
@@ -442,6 +509,7 @@ def render_job_monitor(meta: dict, key_prefix: str = "job") -> None:
             "Reprendre depuis la sauvegarde",
             key=f"{key_prefix}-resume",
             type="primary",
+            icon=":material/restart_alt:",
             use_container_width=True,
         ):
             resumed_meta = resume_background_job(meta)
@@ -1015,27 +1083,567 @@ def render_css() -> None:
         -webkit-font-smoothing: antialiased !important;
     }
 
+    /* Compact application shell */
+    .block-container {
+        max-width: 1240px;
+        padding: 0.7rem 1.4rem 3rem;
+    }
+    [data-testid="stDecoration"] {
+        display: none;
+    }
+    .brand-header {
+        min-height: 0;
+        padding: 0.8rem 1.15rem 0.7rem;
+        margin: 0 0 0.65rem;
+        border-bottom-width: 2px;
+        border-radius: 6px;
+    }
+    .brand-header::before {
+        height: 2px;
+    }
+    .constellation-orbit {
+        width: 430px;
+        height: 430px;
+        right: -100px;
+        top: -205px;
+        opacity: 0.2;
+    }
+    .brand-top {
+        align-items: center;
+    }
+    .header-brand-lockup,
+    .header-actions,
+    .sidebar-brand-row {
+        display: flex;
+        align-items: center;
+    }
+    .header-brand-lockup {
+        min-width: 0;
+        gap: 0.95rem;
+    }
+    .header-actions {
+        gap: 0.45rem;
+        flex-shrink: 0;
+    }
+    .brand-logo {
+        width: 138px;
+        max-width: none;
+        flex-shrink: 0;
+    }
+    .header-divider {
+        width: 1px;
+        height: 42px;
+        background: rgba(255, 255, 255, 0.28);
+        flex-shrink: 0;
+    }
+    .header-copy {
+        min-width: 0;
+    }
+    .brand-kicker {
+        color: var(--leonard-blue);
+        font-size: 0.62rem;
+        margin-bottom: 0.08rem;
+    }
+    .brand-title {
+        font-size: 1.55rem;
+        line-height: 1;
+    }
+    h1.brand-title {
+        font-size: 1.55rem !important;
+    }
+    .brand-subtitle {
+        font-size: 0.76rem;
+        margin-top: 0.22rem;
+        white-space: nowrap;
+    }
+    .internal-badge,
+    .profile-badge {
+        min-height: 24px;
+        padding: 0.18rem 0.5rem;
+        font-size: 0.64rem;
+        border-radius: 4px;
+    }
+    .workflow-strip {
+        gap: 1.4rem;
+        margin-top: 0.65rem;
+        padding: 0.55rem 0.1rem 0;
+        border-top: 1px solid rgba(255, 255, 255, 0.18);
+    }
+    .workflow-strip::before {
+        left: 13px;
+        right: calc(33.333% - 13px);
+        top: 18px;
+    }
+    .workflow-step,
+    .workflow-step + .workflow-step {
+        grid-template-columns: 26px minmax(0, 1fr);
+        gap: 0.6rem;
+        min-height: 34px;
+        padding: 0;
+    }
+    .workflow-number {
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        background: var(--constellation-field);
+        font-size: 0.65rem;
+        transform: none;
+    }
+    .workflow-number span {
+        transform: none;
+    }
+    .workflow-step strong {
+        font-size: 0.76rem;
+    }
+    .workflow-step span:last-child {
+        font-size: 0.66rem;
+    }
+
+    [data-testid="stSidebar"] {
+        border-right-color: var(--leonard-line);
+        box-shadow: none;
+    }
+    [data-testid="stSidebar"]::before {
+        display: none;
+    }
+    [data-testid="stSidebar"] > div:first-child {
+        padding-top: 1rem;
+    }
+    .sidebar-brand {
+        padding: 0 0 0.85rem;
+        margin-bottom: 1rem;
+    }
+    .sidebar-brand-row {
+        justify-content: space-between;
+        gap: 0.6rem;
+    }
+    .sidebar-brand .sidebar-logo {
+        width: 132px;
+        margin: 0;
+    }
+    .sidebar-product {
+        margin-top: 0.7rem;
+        font-family: "Vinci Sans", Arial, sans-serif;
+        font-size: 0.9rem;
+        font-weight: 700;
+    }
+    .sidebar-internal {
+        color: var(--leonard-muted);
+        font-size: 0.62rem;
+        font-weight: 700;
+        text-transform: uppercase;
+    }
+    .sidebar-label {
+        color: var(--leonard-muted);
+        font-size: 0.65rem;
+        margin-bottom: 0.35rem;
+    }
+    [data-testid="stSidebar"] [data-baseweb="select"] > div {
+        min-height: 38px;
+        background: var(--leonard-canvas);
+        border-color: transparent !important;
+        border-radius: 5px !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stCaptionContainer"] {
+        color: var(--leonard-muted);
+        font-size: 0.68rem;
+    }
+    .system-status {
+        display: inline-flex;
+        align-items: center;
+        width: fit-content;
+        gap: 0.38rem;
+        border: 1px solid var(--leonard-line);
+        border-radius: 999px;
+        padding: 0.35rem 0.65rem;
+        margin: 1rem 0 0.7rem;
+        background: var(--leonard-white);
+        font-size: 0.7rem;
+    }
+    .status-dot {
+        width: 7px;
+        height: 7px;
+        margin: 0;
+    }
+    [data-testid="stSidebar"] [data-testid="stExpander"] {
+        margin-top: 0.15rem;
+        background: transparent;
+    }
+
+    .stTabs [data-baseweb="tab-list"] {
+        width: 100%;
+        gap: 1.5rem;
+        padding: 0;
+        border: 0;
+        border-bottom: 1px solid var(--leonard-line);
+        background: transparent;
+        margin-bottom: 0.8rem;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 42px;
+        padding: 0 0.2rem;
+        border-radius: 0 !important;
+        font-size: 0.8rem;
+        background: transparent !important;
+    }
+    .stTabs [aria-selected="true"] {
+        color: var(--leonard-navy) !important;
+        background: transparent !important;
+        box-shadow: inset 0 -2px 0 var(--leonard-pink);
+    }
+
+    .page-heading-row {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 1rem;
+        margin: 1rem 0 0.85rem;
+    }
+    .section-heading {
+        margin: 0;
+    }
+    .section-heading h2 {
+        color: var(--leonard-ink);
+        font-family: "Vinci Sans", Arial, sans-serif !important;
+        font-size: 1.42rem !important;
+        font-weight: 700 !important;
+        line-height: 1.2;
+    }
+    .section-heading p {
+        color: var(--leonard-muted);
+        font-size: 0.8rem;
+        margin: 0.3rem 0 0;
+    }
+    .section-kicker {
+        font-size: 0.64rem;
+        margin-bottom: 0.2rem;
+    }
+    .page-profile-chip,
+    .history-status,
+    .job-state-badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 26px;
+        padding: 0.22rem 0.6rem;
+        border: 1px solid var(--leonard-line);
+        border-radius: 999px;
+        color: var(--leonard-navy);
+        background: var(--leonard-white);
+        font-size: 0.68rem;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+    .run-facts,
+    .progress-facts {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.65rem;
+        margin: 0 0 0.8rem;
+    }
+    .run-fact,
+    .progress-facts > div {
+        padding: 0.7rem 0.8rem;
+        border: 1px solid var(--leonard-line);
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.88);
+        box-shadow: 0 1px 2px rgba(16, 43, 69, 0.05);
+    }
+    .run-fact span,
+    .progress-facts span {
+        display: block;
+        color: var(--leonard-muted);
+        font-size: 0.65rem;
+        text-transform: uppercase;
+    }
+    .run-fact strong,
+    .progress-facts strong {
+        display: block;
+        color: var(--leonard-ink);
+        font-size: 0.88rem;
+        margin-top: 0.15rem;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        border-color: var(--leonard-line) !important;
+        border-radius: 6px !important;
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow: 0 1px 3px rgba(16, 43, 69, 0.06);
+    }
+    .workspace-title {
+        display: flex;
+        align-items: center;
+        gap: 0.7rem;
+        margin-bottom: 0.85rem;
+    }
+    .workspace-title > span:last-child {
+        min-width: 0;
+    }
+    .workspace-title strong,
+    .workspace-title small {
+        display: block;
+    }
+    .workspace-title strong {
+        font-size: 0.92rem;
+    }
+    .workspace-title small {
+        color: var(--leonard-muted);
+        font-size: 0.7rem;
+        margin-top: 0.12rem;
+    }
+    .workspace-icon {
+        display: grid;
+        place-items: center;
+        width: 38px;
+        height: 38px;
+        flex: 0 0 38px;
+        border-radius: 6px;
+        background: var(--leonard-soft-blue);
+        color: var(--leonard-navy);
+        font-size: 0.62rem;
+        font-weight: 700;
+    }
+    [data-testid="stFileUploaderDropzone"] {
+        min-height: 210px;
+        align-items: center;
+        justify-content: center;
+        border: 1px dashed var(--leonard-blue);
+        border-radius: 6px;
+        background: var(--leonard-canvas);
+        transition: border-color 150ms ease, background 150ms ease;
+    }
+    [data-testid="stFileUploaderDropzone"]:hover {
+        border-color: var(--leonard-pink);
+        background: var(--leonard-soft-blue);
+    }
+    [data-testid="stFileUploaderDropzone"] > div {
+        width: 100%;
+        justify-content: center;
+    }
+    [data-testid="stFileUploaderDropzone"] button {
+        min-height: 38px;
+        margin-inline: auto;
+        border-radius: 5px !important;
+        background: var(--leonard-white);
+    }
+    .file-ready {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        border: 1px solid var(--leonard-line);
+        border-left: 3px solid var(--leonard-blue);
+        border-radius: 5px;
+        margin: 0.65rem 0;
+        padding: 0.58rem 0.7rem;
+    }
+    .file-ready strong {
+        flex-shrink: 0;
+        color: var(--leonard-navy);
+    }
+    .file-ready span {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .stButton > button,
+    .stDownloadButton > button {
+        min-height: 40px;
+        border-radius: 5px !important;
+        font-size: 0.78rem;
+        transition: border-color 150ms ease, color 150ms ease, background 150ms ease;
+    }
+    .stButton > button[kind="primary"] {
+        min-height: 46px;
+    }
+    [data-testid="stProgress"] > div > div {
+        border-radius: 999px;
+        overflow: hidden;
+    }
+    [data-testid="stAlert"] {
+        border-radius: 6px;
+        box-shadow: 0 1px 2px rgba(16, 43, 69, 0.04);
+    }
+    [data-testid="stExpander"] {
+        border-radius: 6px;
+    }
+
+    .job-overview {
+        margin: 0.75rem 0 0.8rem;
+        padding: 0.9rem 1rem;
+        border: 1px solid var(--leonard-line);
+        border-radius: 6px;
+        background: var(--leonard-white);
+        box-shadow: 0 1px 3px rgba(16, 43, 69, 0.06);
+    }
+    .job-overview-top,
+    .history-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+    }
+    .job-overview-top > div,
+    .history-header > div {
+        min-width: 0;
+    }
+    .job-overview-top strong,
+    .history-header strong,
+    .run-list-item strong {
+        display: block;
+        color: var(--leonard-ink);
+        font-size: 0.84rem;
+        overflow-wrap: anywhere;
+    }
+    .job-eyebrow {
+        display: block;
+        color: var(--leonard-muted);
+        font-size: 0.62rem;
+        text-transform: uppercase;
+        margin-bottom: 0.12rem;
+    }
+    .job-state-badge.running,
+    .job-state-badge.done {
+        border-color: var(--leonard-blue);
+        background: var(--leonard-soft-blue);
+    }
+    .job-state-badge.error,
+    .job-state-badge.stopped,
+    .job-state-badge.stopping {
+        border-color: var(--leonard-pink);
+        color: var(--leonard-pink);
+    }
+    .run-phase-stepper {
+        position: relative;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.8rem;
+        margin-top: 0.8rem;
+    }
+    .run-phase-stepper::before {
+        content: "";
+        position: absolute;
+        left: 13px;
+        right: calc(16.667% - 13px);
+        top: 13px;
+        height: 1px;
+        background: var(--leonard-line);
+    }
+    .run-phase {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: var(--leonard-muted);
+        font-size: 0.7rem;
+        font-weight: 700;
+    }
+    .run-phase-marker {
+        display: grid;
+        place-items: center;
+        width: 26px;
+        height: 26px;
+        flex: 0 0 26px;
+        border: 1px solid var(--leonard-line);
+        border-radius: 50%;
+        background: var(--leonard-white);
+        color: var(--leonard-muted);
+        font-size: 0.64rem;
+    }
+    .run-phase.active,
+    .run-phase.done {
+        color: var(--leonard-navy);
+    }
+    .run-phase.active .run-phase-marker {
+        border-color: var(--leonard-blue);
+        color: var(--leonard-navy);
+        background: var(--leonard-soft-blue);
+    }
+    .run-phase.done .run-phase-marker {
+        border-color: var(--leonard-navy);
+        color: var(--leonard-white);
+        background: var(--leonard-navy);
+    }
+    .run-phase.error,
+    .run-phase.error .run-phase-marker {
+        border-color: var(--leonard-pink);
+        color: var(--leonard-pink);
+    }
+    .list-section-title {
+        color: var(--leonard-ink);
+        font-size: 0.78rem;
+        font-weight: 700;
+        margin: 1rem 0 0.45rem;
+    }
+    .run-list-item,
+    .history-header {
+        margin-bottom: 0.7rem;
+    }
+    .run-list-item span,
+    .history-header span:not(.history-status) {
+        display: block;
+        color: var(--leonard-muted);
+        font-size: 0.7rem;
+        margin-top: 0.2rem;
+    }
+    .history-status {
+        color: var(--leonard-muted);
+        font-weight: 500;
+    }
+    .metric-card {
+        min-height: 100px;
+        border-radius: 6px;
+        box-shadow: 0 1px 3px rgba(16, 43, 69, 0.05);
+    }
+
     @media (max-width: 760px) {
         .block-container {
             padding: 0.65rem 0.85rem 2rem;
         }
         .brand-header {
             min-height: 0;
-            padding: 1rem 1rem 1.15rem;
+            padding: 0.75rem 0.8rem 0.7rem;
         }
         .brand-top,
         .brand-main {
             align-items: flex-start;
+        }
+        .brand-top {
+            display: block;
+        }
+        .header-brand-lockup {
+            gap: 0.6rem;
+        }
+        .header-actions {
+            justify-content: flex-end;
+            margin-top: 0.5rem;
+        }
+        .header-actions .internal-badge {
+            display: none;
+        }
+        .header-divider {
+            height: 36px;
         }
         .brand-main {
             flex-direction: column;
             gap: 0.75rem;
         }
         .brand-logo {
-            max-width: 65%;
+            width: 106px;
+            max-width: none;
         }
         .brand-title {
-            font-size: 1.65rem;
+            font-size: 1.3rem;
+        }
+        h1.brand-title {
+            font-size: 1.3rem !important;
+        }
+        .brand-kicker {
+            font-size: 0.56rem;
+        }
+        .brand-subtitle {
+            max-width: 210px;
+            font-size: 0.66rem;
+            white-space: normal;
         }
         .constellation-orbit {
             width: 470px;
@@ -1088,7 +1696,51 @@ def render_css() -> None:
         .status-box-meta {
             white-space: normal;
         }
+        .page-heading-row {
+            align-items: flex-start;
+            flex-direction: column;
+            gap: 0.55rem;
+        }
+        .section-heading h2 {
+            font-size: 1.2rem !important;
+        }
+        .run-facts,
+        .progress-facts {
+            gap: 0.4rem;
+        }
+        .run-fact,
+        .progress-facts > div {
+            padding: 0.55rem;
+        }
+        .run-fact span,
+        .progress-facts span {
+            font-size: 0.56rem;
+        }
+        .run-fact strong,
+        .progress-facts strong {
+            font-size: 0.76rem;
+        }
+        [data-testid="stFileUploaderDropzone"] {
+            min-height: 170px;
+        }
+        .file-ready,
+        .history-header,
+        .job-overview-top {
+            align-items: flex-start;
+            flex-direction: column;
+        }
+        .run-phase-stepper {
+            gap: 0.35rem;
+        }
+        .run-phase {
+            align-items: flex-start;
+            flex-direction: column;
+            gap: 0.3rem;
+            font-size: 0.62rem;
+        }
         .stTabs [data-baseweb="tab"] {
+            flex: 1;
+            justify-content: center;
             padding: 0 0.7rem;
         }
         .stTabs [data-baseweb="tab-list"] {
@@ -1119,31 +1771,31 @@ def render_header(profile: str) -> None:
             {orbit_svg}
             <div class="brand-content">
                 <div class="brand-top">
-                    {logo_markup}
-                    <span class="internal-badge">Usage interne</span>
-                </div>
-                <div class="brand-main">
-                    <div>
+                    <div class="header-brand-lockup">
+                        {logo_markup}
+                        <span class="header-divider"></span>
+                        <div class="header-copy">
                         <div class="brand-kicker">Dealflow constellation</div>
                         <h1 class="brand-title">Startup Dealflow</h1>
                         <p class="brand-subtitle">Qualification stratégique pour les métiers et programmes Leonard.</p>
+                        </div>
                     </div>
-                    <div class="header-index">
+                    <div class="header-actions">
                         <span class="profile-badge">Profil {profile_label}</span>
-                        <span><strong>3</strong> niveaux d'analyse</span>
+                        <span class="internal-badge">Usage interne</span>
                     </div>
                 </div>
                 <div class="workflow-strip" aria-label="Parcours de qualification">
                     <div class="workflow-step">
-                        <span class="workflow-number"><span>01</span></span>
+                        <span class="workflow-number"><span>1</span></span>
                         <span><strong>Éligibilité</strong><span>Premier filtre</span></span>
                     </div>
                     <div class="workflow-step">
-                        <span class="workflow-number"><span>02</span></span>
+                        <span class="workflow-number"><span>2</span></span>
                         <span><strong>Alignement</strong><span>Enjeux stratégiques</span></span>
                     </div>
                     <div class="workflow-step">
-                        <span class="workflow-number"><span>03</span></span>
+                        <span class="workflow-number"><span>3</span></span>
                         <span><strong>Orientation</strong><span>Seed · Catalyst · Matériaux</span></span>
                     </div>
                 </div>
@@ -1172,9 +1824,11 @@ def render_config_status() -> str:
     st.sidebar.markdown(
         f"""
         <div class="sidebar-brand">
-            {logo_markup}
-            <div class="sidebar-product">Dealflow Studio</div>
-            <div class="sidebar-caption">Qualification & orientation</div>
+            <div class="sidebar-brand-row">
+                {logo_markup}
+                <span class="sidebar-internal">Interne</span>
+            </div>
+            <div class="sidebar-product">Startup Dealflow</div>
         </div>
         <div class="sidebar-label">Profil d'analyse</div>
         """,
@@ -1199,8 +1853,7 @@ def render_config_status() -> str:
     st.sidebar.markdown(
         f"""
         <div class="system-status">
-            <div><span class="status-dot{status_class}"></span><strong>{status_label}</strong></div>
-            <div>{html.escape(deployment)} · Azure OpenAI</div>
+            <span class="status-dot{status_class}"></span><strong>{status_label}</strong>
         </div>
         """,
         unsafe_allow_html=True,
@@ -1362,13 +2015,13 @@ def page_run_pipeline(profile: str) -> None:
     profile_label = "Europe" if profile == dealflow_profiles.EUROPE else "LATAM"
     st.markdown(
         f"""
-        <div class="section-heading">
-            <div class="section-kicker">Nouveau dossier</div>
-            <h2>Lancer une qualification</h2>
-        </div>
-        <div class="status-box">
-            <span><strong>Profil {profile_label}</strong> · Pipeline Algo 1 → Algo 2 → Algo 3</span>
-            <span class="status-box-meta">Excel source · .xlsx, .xlsm ou .xls</span>
+        <div class="page-heading-row">
+            <div class="section-heading">
+                <div class="section-kicker">Nouvelle analyse</div>
+                <h2>Qualifier un portefeuille</h2>
+                <p>Importez le fichier source, puis suivez le traitement jusqu'aux livrables.</p>
+            </div>
+            <span class="page-profile-chip">Profil {profile_label}</span>
         </div>
         """,
         unsafe_allow_html=True,
@@ -1390,83 +2043,84 @@ def page_run_pipeline(profile: str) -> None:
         if job_state(meta) in {"running", "stopping"}
     ]
     if running_jobs:
-        st.markdown("### Analyses en cours")
+        st.markdown('<div class="list-section-title">Analyses en cours</div>', unsafe_allow_html=True)
         for index, meta in enumerate(running_jobs[:3]):
             with st.container(border=True):
-                st.write(f"**{job_display_name(meta)}**")
-                st.caption(f"Profil : {meta.get('profile', '')} · démarré le {meta.get('started_at', '')}")
-                if st.button("Suivre ce run", key=f"follow-running-{index}", use_container_width=True):
+                st.markdown(
+                    f'<div class="run-list-item"><strong>{html.escape(job_display_name(meta))}</strong>'
+                    f'<span>Profil {html.escape(str(meta.get("profile", "")))} · démarré le '
+                    f'{html.escape(str(meta.get("started_at", "")))}</span></div>',
+                    unsafe_allow_html=True,
+                )
+                if st.button(
+                    "Suivre ce run",
+                    key=f"follow-running-{index}",
+                    icon=":material/monitoring:",
+                    use_container_width=True,
+                ):
                     st.session_state["active_job_meta"] = meta
                     st.rerun()
 
     resumable_jobs = [meta for meta in recent_jobs if can_resume_job(meta)]
     if resumable_jobs:
-        st.markdown("### Analyses interrompues")
+        st.markdown('<div class="list-section-title">Reprises disponibles</div>', unsafe_allow_html=True)
         for index, meta in enumerate(resumable_jobs[:5]):
             with st.container(border=True):
-                st.write(f"**{job_display_name(meta)}**")
-                st.caption(f"Profil : {meta.get('profile', '')} · sauvegarde disponible")
+                st.markdown(
+                    f'<div class="run-list-item"><strong>{html.escape(job_display_name(meta))}</strong>'
+                    f'<span>Profil {html.escape(str(meta.get("profile", "")))} · sauvegarde disponible</span></div>',
+                    unsafe_allow_html=True,
+                )
                 if st.button(
                     "Reprendre ce run",
                     key=f"resume-stopped-{index}",
+                    icon=":material/restart_alt:",
                     use_container_width=True,
                 ):
                     resumed_meta = resume_background_job(meta)
                     st.session_state["active_job_meta"] = resumed_meta
                     st.rerun()
 
-    workspace, context = st.columns([1.65, 0.75], gap="large")
-    with workspace:
-        with st.container(border=True):
-            st.markdown(
-                """
-                <div class="workspace-title">
-                    <strong>Source à analyser</strong>
-                    <span>Portefeuille Excel conservé avec toutes ses colonnes.</span>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            uploaded_file = st.file_uploader(
-                "Portefeuille de startups",
-                type=["xlsx", "xlsm", "xls"],
-                accept_multiple_files=False,
-                label_visibility="collapsed",
-            )
-            if uploaded_file:
-                st.markdown(
-                    f'<div class="file-ready"><strong>Fichier prêt</strong><br>{html.escape(uploaded_file.name)}</div>',
-                    unsafe_allow_html=True,
-                )
-            start = st.button(
-                "Lancer la qualification",
-                type="primary",
-                use_container_width=True,
-                disabled=uploaded_file is None,
-            )
-            st.caption("Exécution en arrière-plan avec sauvegarde progressive.")
+    st.markdown(
+        f"""
+        <div class="run-facts">
+            <div class="run-fact"><span>Profil actif</span><strong>{profile_label}</strong></div>
+            <div class="run-fact"><span>Analyses actives</span><strong>{len(running_jobs)}</strong></div>
+            <div class="run-fact"><span>Reprises disponibles</span><strong>{len(resumable_jobs)}</strong></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    with context:
+    with st.container(border=True):
         st.markdown(
-            f"""
-            <aside class="run-context">
-                <div class="run-context-title">Contexte du run</div>
-                <div class="context-row">
-                    <span class="context-key">01</span>
-                    <span><strong>Profil {profile_label}</strong><span>Référentiel régional actif</span></span>
-                </div>
-                <div class="context-row">
-                    <span class="context-key">02</span>
-                    <span><strong>{len(running_jobs)} analyse(s) active(s)</strong><span>Suivi des processus actifs</span></span>
-                </div>
-                <div class="context-row">
-                    <span class="context-key">03</span>
-                    <span><strong>{len(resumable_jobs)} reprise(s) disponible(s)</strong><span>Sauvegardes détectées</span></span>
-                </div>
-            </aside>
+            """
+            <div class="workspace-title">
+                <span class="workspace-icon">XLS</span>
+                <span><strong>Portefeuille Excel</strong><small>.xlsx, .xlsm ou .xls · toutes les colonnes sont conservées</small></span>
+            </div>
             """,
             unsafe_allow_html=True,
         )
+        uploaded_file = st.file_uploader(
+            "Portefeuille de startups",
+            type=["xlsx", "xlsm", "xls"],
+            accept_multiple_files=False,
+            label_visibility="collapsed",
+        )
+        if uploaded_file:
+            st.markdown(
+                f'<div class="file-ready"><strong>Fichier prêt</strong><span>{html.escape(uploaded_file.name)}</span></div>',
+                unsafe_allow_html=True,
+            )
+        start = st.button(
+            "Lancer la qualification",
+            type="primary",
+            icon=":material/play_arrow:",
+            use_container_width=True,
+            disabled=uploaded_file is None,
+        )
+        st.caption("Traitement en arrière-plan · sauvegarde progressive · reprise disponible")
 
     if not uploaded_file:
         return
@@ -1487,19 +2141,40 @@ def page_run_pipeline(profile: str) -> None:
 def page_dashboard_only() -> None:
     st.markdown(
         """
-        <div class="section-heading">
-            <div class="section-kicker">Visualisation</div>
-            <h2>Générer un dashboard</h2>
+        <div class="page-heading-row">
+            <div class="section-heading">
+                <div class="section-kicker">Visualisation</div>
+                <h2>Générer un dashboard</h2>
+                <p>Transformez un résultat du pipeline en vue équipe interactive.</p>
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
-    uploaded_file = st.file_uploader(
-        "Résultat du pipeline",
-        type=["xlsx", "xlsm", "xls"],
-        accept_multiple_files=False,
-        key="dashboard-only-upload",
-    )
+    with st.container(border=True):
+        st.markdown(
+            """
+            <div class="workspace-title">
+                <span class="workspace-icon">DATA</span>
+                <span><strong>Résultat du pipeline</strong><small>Le dashboard HTML sera généré localement.</small></span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        uploaded_file = st.file_uploader(
+            "Résultat du pipeline",
+            type=["xlsx", "xlsm", "xls"],
+            accept_multiple_files=False,
+            key="dashboard-only-upload",
+            label_visibility="collapsed",
+        )
+        generate = st.button(
+            "Générer le dashboard",
+            type="primary",
+            icon=":material/dashboard:",
+            use_container_width=True,
+            disabled=uploaded_file is None,
+        )
     if not uploaded_file:
         return
 
@@ -1507,7 +2182,7 @@ def page_dashboard_only() -> None:
     excel_path = save_uploaded_file(uploaded_file, run_dir)
     dashboard_path = excel_path.with_name(f"{excel_path.stem}_dashboard.html")
 
-    if st.button("Générer dashboard", type="primary", use_container_width=True):
+    if generate:
         try:
             dashboard_path = Generer_dashboard.generate_dashboard(excel_path)
             st.success(f"Dashboard généré : {dashboard_path.name}")
@@ -1529,16 +2204,20 @@ def iter_run_outputs() -> list[tuple[Path, Path | None]]:
 
 
 def page_history() -> None:
+    outputs = iter_run_outputs()
     st.markdown(
-        """
-        <div class="section-heading">
-            <div class="section-kicker">Archives</div>
-            <h2>Historique des analyses</h2>
+        f"""
+        <div class="page-heading-row">
+            <div class="section-heading">
+                <div class="section-kicker">Archives</div>
+                <h2>Historique des analyses</h2>
+                <p>Retrouvez les derniers résultats et leurs dashboards associés.</p>
+            </div>
+            <span class="page-profile-chip">{len(outputs)} résultat(s)</span>
         </div>
         """,
         unsafe_allow_html=True,
     )
-    outputs = iter_run_outputs()
     if not outputs:
         st.info("Aucun run disponible pour l'instant.")
         return
@@ -1546,8 +2225,17 @@ def page_history() -> None:
     for index, (excel_path, dashboard_path) in enumerate(outputs):
         with st.container(border=True):
             stat = excel_path.stat()
-            st.write(f"**{excel_path.name}**")
-            st.caption(f"{excel_path.parent.name} - modifié le {datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S')}")
+            dashboard_status = "Dashboard disponible" if dashboard_path else "Excel disponible"
+            st.markdown(
+                f"""
+                <div class="history-header">
+                    <div><strong>{html.escape(excel_path.name)}</strong>
+                    <span>{html.escape(excel_path.parent.name)} · modifié le {datetime.fromtimestamp(stat.st_mtime).strftime('%d/%m/%Y à %H:%M')}</span></div>
+                    <span class="history-status">{dashboard_status}</span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
             col1, col2, col3 = st.columns(3)
             with col1:
                 download_button(
@@ -1562,7 +2250,12 @@ def page_history() -> None:
                 else:
                     st.caption("Dashboard absent.")
             with col3:
-                if st.button("Prévisualiser", key=f"preview-{index}", use_container_width=True):
+                if st.button(
+                    "Prévisualiser",
+                    key=f"preview-{index}",
+                    icon=":material/visibility:",
+                    use_container_width=True,
+                ):
                     if dashboard_path:
                         render_dashboard_preview(dashboard_path)
                     else:
