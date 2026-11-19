@@ -22,7 +22,7 @@ DEALFLOW_PROFILE=EUROPE
 
 Les trois algos utilisent le même déploiement Azure OpenAI : `gpt-5-mini-2`.
 
-### Profils Europe / LATAM
+### Profils Europe, LATAM et VINCI Concessions
 
 Le profil par défaut est `EUROPE` : il conserve les critères actuels.
 
@@ -47,7 +47,56 @@ Le profil `LATAM` :
 - garde les traces dans `dealflow_profile` et `profile_exclusion_matches` ;
 - utilise pour Algo3 les seuils ARR provisoires : Seed `< 500k EUR`, Catalyst `> 500k EUR`.
 
-Dans l'app Streamlit, le profil se choisit directement dans la barre latérale.
+#### VINCI Concessions
+
+Dans la barre latérale de Streamlit, choisis **VINCI Concessions** dans **Profil d'analyse**, puis sélectionne une **Business unit**. Chaque analyse utilise la grille de la BU choisie. Le périmètre reprend les cinq divisions présentées par VINCI Concessions. [Rapport d'engagement VINCI Concessions](https://engagementreport.vinci-concessions.com/2024-2025/doc/article/6/)
+
+| Business unit | Code `DEALFLOW_PROFILE` | Cas d'usage à repérer | Indicateurs possibles |
+| --- | --- | --- | --- |
+| **VINCI Airports** | `VINCI_AIRPORTS` | Parcours passager, escales et bagages, maintenance des infrastructures, environnement, commerces et accès. [Détail de la grille](#vinci-airports) | Attente, ponctualité, disponibilité, consommation |
+| **VINCI Autoroutes** | `VINCI_AUTOROUTES` | Réseau concédé en France. Sécurité des patrouilleurs, détection d'incidents, inspection des chaussées et viaducs, trafic et télépéage, recharge et covoiturage sur les aires. [Activités du réseau](https://www.vinci-autoroutes.com/fr/actualites/) | Délai d'intervention, état des chaussées, disponibilité des bornes |
+| **VINCI Highways** | `VINCI_HIGHWAYS` | Concessions routières internationales. Péage en flux libre, services de paiement, supervision du trafic, maintenance des ponts et tunnels, résilience du réseau. [Péage](https://vinci-highways.com/tolling-services/) · [Exploitation et maintenance](https://vinci-highways.com/operations-maintenance/) | Transactions correctement traitées, temps d'intervention, disponibilité des équipements |
+| **VINCI Railways** | `VINCI_RAILWAYS` | Infrastructures ferroviaires et de transport guidé. Géométrie des voies, maintenance des aiguillages et caténaires, planification des interventions, accessibilité en gare. [Périmètre ferroviaire](https://engagementreport.vinci-concessions.com/2025-2026/fr/doc/article/13/) · [Expertise MESEA](https://www.mesea.fr/expertise/) | Défauts détectés, retards, durée des interruptions |
+| **VINCI Stadium** | `VINCI_STADIUM` | Grandes enceintes sportives et événementielles. Flux et accessibilité, billetterie professionnelle, gestion des prestataires, entretien des installations, énergie, eau et déchets. [Périmètre des stades](https://engagementreport.vinci-concessions.com/2025-2026/fr/doc/article/13/) · [Engagements de l'Allianz Riviera](https://www.allianz-riviera.fr/fr/allianz-riviera/des-engagements-de-developpement-durable-forts) | Temps d'accès, disponibilité des équipements, consommation pendant les événements |
+
+En ligne de commande, renseigne le code d'une BU dans `DEALFLOW_PROFILE`. Par exemple, pour VINCI Highways.
+
+```powershell
+$env:DEALFLOW_PROFILE="VINCI_HIGHWAYS"
+python -B Pipeline_Algo123.py "mon_fichier_source.xlsx"
+```
+
+Les grilles constituent un premier ensemble de critères fondés sur les activités publiques des BU.
+
+- **À garder** si un produit identifiable apporte une réponse concrète à un besoin de l'exploitant ou d'un partenaire professionnel de la BU. Une référence dans un domaine voisin peut suffire si le transfert est crédible.
+- **À vérifier** si les données sont insuffisantes, contradictoires ou si le cas d'usage pour la BU reste à confirmer. La justification indique l'information à compléter.
+- **À écarter** si l'activité décrite est clairement hors du périmètre de la BU. Par exemple, une application de scores sportifs destinée aux particuliers est hors périmètre pour VINCI Stadium.
+
+Le raccourci Excel traite les cas explicites en français ou en anglais. Il repère un produit, son client professionnel et un usage de la grille choisie. Il peut aussi écarter certains cas grand public explicites. Les autres lignes passent à l'analyse approfondie avec Azure, ou à **À vérifier** quand `ALGO1_DISABLE_API=1`. Pour tester Algo1 sans Azure, utilise cet exemple après avoir sélectionné le profil dans PowerShell.
+
+```powershell
+$env:ALGO1_DISABLE_API="1"
+python -B Algo1.py "mon_fichier_source.xlsx"
+Remove-Item Env:ALGO1_DISABLE_API
+```
+
+Dans l'analyse approfondie, Algo1 vérifie que l'extrait justificatif figure dans l'Excel ou dans le texte du site. Dans la feuille **Synthese equipe**, `dealflow_profile` identifie la BU. Les colonnes `algo1_bu_metier`, `algo1_bu_cas_usage` et `algo1_bu_element_observe` retracent la décision. Les exports VINCI Airports utilisent le préfixe historique `algo1_airports_`. Les informations à compléter figurent dans `algo1_infos_manquantes` pour le pipeline, ou `missing_information` pour Algo1 seul.
+
+Les lignes retenues poursuivent l'affinage stratégique et l'orientation selon les règles du pipeline Leonard. En cas de reprise, Streamlit réutilise la BU du lancement et le pipeline vérifie le profil de la sauvegarde. Les grilles sont définies dans `vinci_concessions.py` et `vinci_airports.py`.
+
+#### VINCI Airports
+
+Un outil de gestion des files en gare peut être retenu si son application à un terminal et le bénéfice pour l'exploitant sont étayés.
+
+| Métier | Exemples de cas d'usage | Indicateurs à examiner |
+| --- | --- | --- |
+| Parcours passager et accessibilité | Prévision des files, réservation de créneaux de passage, orientation en terminal, assistance aux personnes à mobilité réduite. [Qualité de service](https://vinci-airports.com/en/our-expertises/quality-of-service/) | Temps d'attente, délai de prise en charge |
+| Opérations au sol et bagages | Coordination des escales, suivi des bagages, gestion des équipements au sol. [Essentials 2025](https://essentials.vinci-airports.com/2025/en/doc/article/23/) | Durée d'escale, ponctualité, délai de livraison des bagages |
+| Infrastructure et maintenance | Inspection des pistes, suivi des équipements, maintenance prédictive. [Modernisation des infrastructures](https://essentials.vinci-airports.com/2025/en/doc/article/20/) | Disponibilité des équipements, durée d'intervention |
+| Énergie et environnement | Pilotage énergétique, recharge des véhicules de service, détection des fuites d'eau, valorisation des déchets, suivi de la biodiversité. [Engagements environnementaux](https://vinci-airports.com/en/our-commitments/) | Énergie, émissions, consommation d'eau, déchets évités |
+| Commerces, parkings et accès | Prévision des flux commerciaux, gestion du taux d'occupation des parkings, réservation ou optimisation des navettes. [Activités extra-aéronautiques](https://vinci-airports.com/en/our-expertises/extra-aeronautical-activities/) | Taux d'occupation, temps d'accès, revenu par passager |
+
+### Raccourcis Excel et appels API
 
 Les scripts peuvent éviter des appels API quand l'Excel contient déjà assez d'informations :
 
@@ -74,7 +123,7 @@ Dans ce mode, si l'Excel ne suffit pas, la ligne part en vérification au lieu d
 Interface web interne pour l'equipe. Elle permet de :
 
 - uploader un fichier Excel source ;
-- choisir le profil de traitement `Europe` ou `LATAM` ;
+- choisir `Europe`, `LATAM` ou une BU de `VINCI Concessions` ;
 - lancer le pipeline Algo1 -> Algo2 -> Algo3 en arriere-plan ;
 - suivre les logs pendant l'analyse ;
 - telecharger l'Excel final ;
@@ -119,7 +168,7 @@ Le bouton `Arreter l'analyse` demande l'arret du job et conserve la derniere
 sauvegarde temporaire disponible.
 Pour continuer, ouvre `Analyses interrompues`, puis clique sur
 `Reprendre ce run`. Le pipeline repart apres la derniere ligne presente dans
-la sauvegarde temporaire, avec le meme profil Europe ou LATAM.
+la sauvegarde temporaire, avec le même profil que celui du lancement.
 En revanche, si la machine ou le serveur qui heberge Streamlit s'eteint, le job
 s'arrete aussi.
 

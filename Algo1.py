@@ -22,6 +22,7 @@ import semantic_prefilter
 import learning_memory
 import dealflow_profiles
 import excel_styling
+import vinci_concessions
 
 
 # ============================================================
@@ -942,6 +943,7 @@ EXCEL_CONTEXT_EXCLUDED_OUTPUT_COLUMNS = {
 RESULT_COLUMNS = [
     "dealflow_profile",
     "profile_exclusion_matches",
+    *vinci_concessions.RESULT_COLUMNS,
     "decision",
     "confidence",
     "is_b2b",
@@ -1595,7 +1597,33 @@ def build_excel_shortcut_result_algo1(
     if not ENABLE_EXCEL_SHORTCUT:
         return None
 
-    text = clean_text(" ".join([startup_name, sector, description, site, excel_context]))
+    grid = vinci_concessions.current_grid()
+    if grid:
+        if excel_context_info["truncated"]:
+            return None
+        text = "\n".join([description, excel_context])
+        result = grid.classify_excel(description, excel_context)
+    else:
+        text = clean_text(" ".join([startup_name, sector, description, site, excel_context]))
+        result = build_standard_excel_shortcut_result(text, description)
+
+    if result is None:
+        return None
+
+    result["algo1_scraped_sources"] = ""
+    result["algo1_website_research_quality"] = "non_requise_excel_suffisant"
+    result["algo1_research_text_used"] = ""
+    result["algo1_excel_columns_used"] = " | ".join(excel_context_info["used_columns"])
+    result["algo1_excel_columns_used_count"] = excel_context_info["used_count"]
+    result["algo1_excel_columns_available_count"] = excel_context_info["available_count"]
+    result["algo1_excel_context_truncated"] = "oui" if excel_context_info["truncated"] else "non"
+    result["algo1_processing_mode"] = "excel_shortcut_no_api_no_research"
+    result["algo1_api_called"] = "non"
+    result["algo1_research_called"] = "non"
+    return apply_profile_rules(result, text)
+
+
+def build_standard_excel_shortcut_result(text: str, description: str) -> dict | None:
     if len(text) < 120:
         return None
 
@@ -1706,22 +1734,12 @@ def build_excel_shortcut_result_algo1(
     if result is None:
         return None
 
-    result["algo1_scraped_sources"] = ""
-    result["algo1_website_research_quality"] = "non_requise_excel_suffisant"
     result["algo1_b2b_signals_detected"] = format_matches(b2b_matches)
     result["algo1_b2c_signals_detected"] = format_matches(b2c_matches)
     result["algo1_artisan_only_risk_detected"] = format_matches(artisan_matches)
     result["algo1_sector_signals_detected"] = format_matches(sector_matches)
     result["algo1_vinci_signals_detected"] = format_matches(references["vinci"])
     result["algo1_competitor_signals_detected"] = format_matches(references["competitors"])
-    result["algo1_research_text_used"] = ""
-    result["algo1_excel_columns_used"] = " | ".join(excel_context_info["used_columns"])
-    result["algo1_excel_columns_used_count"] = excel_context_info["used_count"]
-    result["algo1_excel_columns_available_count"] = excel_context_info["available_count"]
-    result["algo1_excel_context_truncated"] = "oui" if excel_context_info["truncated"] else "non"
-    result["algo1_processing_mode"] = "excel_shortcut_no_api_no_research"
-    result["algo1_api_called"] = "non"
-    result["algo1_research_called"] = "non"
     result["algo1_semantic_backend"] = semantic_score.get("backend", "")
     result["algo1_semantic_summary"] = semantic_prefilter.summarize(semantic_score)
     result["algo1_semantic_sector"] = semantic_score.get("sector", "")
@@ -1731,7 +1749,7 @@ def build_excel_shortcut_result_algo1(
     result["algo1_learning_match_label"] = learning_match.get("label", "")
     result["algo1_learning_match_score"] = learning_match.get("score", 0)
     result["algo1_learning_match_source"] = learning_match.get("source", "")
-    return apply_profile_rules(result, text)
+    return result
 
 
 # ============================================================
@@ -1832,19 +1850,7 @@ def build_prompt(
     audit_signals = audit_signals or {}
     profile_context = dealflow_profiles.profile_prompt_context()
 
-    return f"""
-Tu es un analyste innovation pour Leonard, la plateforme d'innovation et de prospective du groupe VINCI.
-
-Ta mission est de préqualifier une startup pour savoir si elle est pertinente pour VINCI.
-
-Profil de traitement :
-{profile_context}
-
-L'algorithme 1 doit classer chaque startup en :
-- A_GARDER
-- A_VERIFIER
-- A_ECARTER
-
+    criteria = f"""
 Critères principaux :
 
 1. Critère B2B
@@ -1912,6 +1918,28 @@ Règles de prudence :
 - En cas de contradiction entre plusieurs colonnes, mentionne-la dans missing_information et choisis
   A_VERIFIER plutôt que d'inventer une interprétation.
 - La langue de réponse doit suivre le profil de traitement ci-dessus.
+""".strip()
+
+    extra_fields = ""
+    grid = vinci_concessions.current_grid()
+    if grid:
+        criteria = grid.algo1_criteria(target_sectors)
+        extra_fields = "".join(f"\n- {field}" for field in grid.result_columns)
+
+    return f"""
+Tu es un analyste innovation pour Leonard, la plateforme d'innovation et de prospective du groupe VINCI.
+
+Ta mission est de préqualifier une startup pour savoir si elle est pertinente pour VINCI.
+
+Profil de traitement :
+{profile_context}
+
+L'algorithme 1 doit classer chaque startup en :
+- A_GARDER
+- A_VERIFIER
+- A_ECARTER
+
+{criteria}
 
 Réponds uniquement avec un objet JSON valide contenant exactement ces champs :
 - decision
@@ -1925,7 +1953,7 @@ Réponds uniquement avec un objet JSON valide contenant exactement ces champs :
 - official_website_likely
 - short_description_clean
 - reason
-- missing_information
+- missing_information{extra_fields}
 
 Données disponibles :
 
@@ -1980,7 +2008,7 @@ Signaux concurrents détectés automatiquement :
 
 
 def classification_schema() -> dict:
-    return {
+    schema = {
         "type": "object",
         "properties": {
             "decision": {
@@ -2059,6 +2087,11 @@ def classification_schema() -> dict:
         ],
         "additionalProperties": False,
     }
+    grid = vinci_concessions.current_grid()
+    if grid:
+        schema["properties"].update(grid.result_properties())
+        schema["required"].extend(grid.result_columns)
+    return schema
 
 
 # ============================================================
@@ -2404,10 +2437,15 @@ def apply_final_rules(result: dict) -> dict:
     return result
 
 
-def apply_profile_rules(result: dict, text: str) -> dict:
-    result = apply_final_rules(result)
+def apply_profile_rules(result: dict, text: str, website_text: str = "") -> dict:
     result["dealflow_profile"] = dealflow_profiles.profile_label()
-    exclusions = dealflow_profiles.detect_excluded_scope(text)
+    grid = vinci_concessions.current_grid()
+    if grid:
+        result["profile_exclusion_matches"] = ""
+        return grid.apply_algo1_rules(result, text, website_text)
+
+    result = apply_final_rules(result)
+    exclusions = dealflow_profiles.detect_excluded_scope(" ".join([text, website_text]))
     result["profile_exclusion_matches"] = dealflow_profiles.format_matches(exclusions)
 
     if exclusions:
@@ -2514,6 +2552,11 @@ def load_resume_results(temp_file: Path, expected_rows: int) -> list[dict]:
     if temp_df.empty:
         return []
 
+    saved_profiles = temp_df.get("dealflow_profile", pd.Series("", index=temp_df.index)).fillna("").astype(str)
+    if not dealflow_profiles.can_resume_profile(saved_profiles):
+        log(f"Profil différent ou non identifié dans {temp_file.name}. Reprise depuis le début.")
+        return []
+
     saved_rows = min(len(temp_df), expected_rows)
     if saved_rows < len(temp_df):
         log(
@@ -2594,9 +2637,13 @@ def process_startup_row(
         excel_context = excel_context_info["text"]
         excel_context_columns = " | ".join(excel_context_info["used_columns"])
         excel_context_truncated = "oui" if excel_context_info["truncated"] else "non"
+        grid = vinci_concessions.current_grid()
 
         if not startup_name and not description and not site and not excel_context:
-            return empty_row_result()
+            result = empty_row_result()
+            if grid:
+                return apply_profile_rules(result, "")
+            return result
 
         shortcut_result = build_excel_shortcut_result_algo1(
             startup_name=startup_name,
@@ -2613,6 +2660,8 @@ def process_startup_row(
             result = error_result(
                 "API Algo 1 désactivée et Excel insuffisant pour une décision automatique fiable."
             )
+            if grid:
+                result["missing_information"] = grid.missing_information
             result["algo1_scraped_sources"] = ""
             result["algo1_website_research_quality"] = "non_requise_api_desactivee"
             result["algo1_b2b_signals_detected"] = ""
@@ -2701,7 +2750,11 @@ def process_startup_row(
         if REQUEST_DELAY_SECONDS > 0:
             time.sleep(REQUEST_DELAY_SECONDS)
 
-        return apply_profile_rules(result, " ".join([startup_name, sector, description, site, excel_context, website_text]))
+        return apply_profile_rules(
+            result,
+            " ".join([startup_name, sector, description, site, excel_context]),
+            website_text,
+        )
 
     except Exception as exc:
         return apply_profile_rules(error_result(f"Erreur ligne pendant le traitement : {exc}"), "")
@@ -2787,7 +2840,8 @@ def main() -> None:
     log(f"Workers parallèles : {MAX_WORKERS}")
     log(f"{len(excel_files)} fichier(s) Excel à traiter.")
 
-    validate_azure_client()
+    if not DISABLE_API:
+        validate_azure_client()
 
     for input_file in excel_files:
         try:

@@ -9,6 +9,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
 
 import pandas as pd
 import streamlit as st
@@ -118,7 +119,7 @@ def safe_filename(name: str) -> str:
 def run_dir_name(uploaded_name: str) -> str:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     stem = Path(safe_filename(uploaded_name)).stem[:70]
-    return f"{timestamp}_{stem}"
+    return f"{timestamp}_{stem}_{uuid4().hex[:8]}"
 
 
 def save_uploaded_file(uploaded_file, target_dir: Path) -> Path:
@@ -355,7 +356,7 @@ def can_resume_job(meta: dict) -> bool:
 
 def resume_background_job(meta: dict) -> dict:
     input_path = Path(str(meta.get("input_path", "")))
-    profile = str(meta.get("profile") or os.getenv("DEALFLOW_PROFILE", "EUROPE"))
+    profile = str(meta.get("profile") or dealflow_profiles.current_profile())
     return start_background_pipeline(input_path, profile)
 
 
@@ -416,12 +417,14 @@ def render_run_phase_stepper(meta: dict, state: str, stage: str) -> None:
         )
 
     filename = html.escape(job_display_name(meta))
+    profile = html.escape(dealflow_profiles.display_name(str(meta.get("profile", ""))))
+    run_label = f"Profil {profile}" if profile else "Traitement du portefeuille"
     state_label = state_labels.get(state, state.title())
     st.markdown(
         f"""
         <div class="job-overview">
             <div class="job-overview-top">
-                <div><span class="job-eyebrow">Traitement du portefeuille</span><strong>{filename}</strong></div>
+                <div><span class="job-eyebrow">{run_label}</span><strong>{filename}</strong></div>
                 <span class="job-state-badge {state}">{state_label}</span>
             </div>
             <div class="run-phase-stepper">{''.join(phase_markup)}</div>
@@ -1763,7 +1766,7 @@ def render_header(profile: str) -> None:
         },
     )
     orbit_svg = inline_svg("constellation-orbit.svg", "constellation-orbit")
-    profile_label = "Europe" if profile == dealflow_profiles.EUROPE else "LATAM"
+    profile_label = dealflow_profiles.display_name(profile)
     logo_markup = logo_svg or '<div class="brand-title">Leonard / VINCI</div>'
     st.markdown(
         f"""
@@ -1812,14 +1815,9 @@ def render_config_status() -> str:
     api_version = os.getenv("AZURE_OPENAI_API_VERSION", "non configure")
     api_key_present = bool(os.getenv("AZURE_OPENAI_API_KEY", "").strip())
 
-    default_profile = os.getenv("DEALFLOW_PROFILE", dealflow_profiles.EUROPE).strip().upper()
-    if default_profile not in dealflow_profiles.AVAILABLE_PROFILES:
-        default_profile = dealflow_profiles.EUROPE
-
-    profile_labels = {
-        dealflow_profiles.EUROPE: "Europe",
-        dealflow_profiles.LATAM: "LATAM",
-    }
+    default_profile = dealflow_profiles.current_profile()
+    is_concessions = default_profile in dealflow_profiles.CONCESSIONS_PROFILES
+    default_scope = dealflow_profiles.VINCI_CONCESSIONS if is_concessions else default_profile
     logo_markup = inline_svg("leonard-vinci-logo.svg", "sidebar-logo")
     st.sidebar.markdown(
         f"""
@@ -1834,15 +1832,27 @@ def render_config_status() -> str:
         """,
         unsafe_allow_html=True,
     )
-    selected_profile = st.sidebar.selectbox(
-        "Zone d'analyse",
-        options=dealflow_profiles.AVAILABLE_PROFILES,
-        index=dealflow_profiles.AVAILABLE_PROFILES.index(default_profile),
-        format_func=lambda value: profile_labels.get(value, value),
+    scope = st.sidebar.selectbox(
+        "Profil d'analyse",
+        options=dealflow_profiles.ANALYSIS_SCOPES,
+        index=dealflow_profiles.ANALYSIS_SCOPES.index(default_scope),
+        format_func=dealflow_profiles.display_name,
+        key="dealflow_analysis_scope",
         label_visibility="collapsed",
     )
-    os.environ["DEALFLOW_PROFILE"] = selected_profile
-    if selected_profile == dealflow_profiles.LATAM:
+    selected_profile = scope
+    if scope == dealflow_profiles.VINCI_CONCESSIONS:
+        divisions = dealflow_profiles.CONCESSIONS_PROFILES
+        default_bu = default_profile if is_concessions else dealflow_profiles.VINCI_AIRPORTS
+        selected_profile = st.sidebar.selectbox(
+            "Business unit",
+            options=divisions,
+            index=divisions.index(default_bu),
+            format_func=dealflow_profiles.display_name,
+            key="dealflow_concessions_bu",
+        )
+        st.sidebar.caption(f"Présélection ciblée sur {dealflow_profiles.CONCESSIONS_ACTIVITIES[selected_profile]}.")
+    elif scope == dealflow_profiles.LATAM:
         st.sidebar.caption("Critères LATAM · analyse en anglais · seuil ARR adapté")
     else:
         st.sidebar.caption("Critères Europe · référentiel Leonard actuel")
@@ -2012,7 +2022,7 @@ def render_outputs(excel_path: Path, dashboard_path: Path, temp_path: Path) -> N
 
 
 def page_run_pipeline(profile: str) -> None:
-    profile_label = "Europe" if profile == dealflow_profiles.EUROPE else "LATAM"
+    profile_label = dealflow_profiles.display_name(profile)
     st.markdown(
         f"""
         <div class="page-heading-row">
@@ -2046,9 +2056,10 @@ def page_run_pipeline(profile: str) -> None:
         st.markdown('<div class="list-section-title">Analyses en cours</div>', unsafe_allow_html=True)
         for index, meta in enumerate(running_jobs[:3]):
             with st.container(border=True):
+                job_profile = html.escape(dealflow_profiles.display_name(str(meta.get("profile", ""))))
                 st.markdown(
                     f'<div class="run-list-item"><strong>{html.escape(job_display_name(meta))}</strong>'
-                    f'<span>Profil {html.escape(str(meta.get("profile", "")))} · démarré le '
+                    f'<span>Profil {job_profile} · démarré le '
                     f'{html.escape(str(meta.get("started_at", "")))}</span></div>',
                     unsafe_allow_html=True,
                 )
@@ -2066,9 +2077,10 @@ def page_run_pipeline(profile: str) -> None:
         st.markdown('<div class="list-section-title">Reprises disponibles</div>', unsafe_allow_html=True)
         for index, meta in enumerate(resumable_jobs[:5]):
             with st.container(border=True):
+                job_profile = html.escape(dealflow_profiles.display_name(str(meta.get("profile", ""))))
                 st.markdown(
                     f'<div class="run-list-item"><strong>{html.escape(job_display_name(meta))}</strong>'
-                    f'<span>Profil {html.escape(str(meta.get("profile", "")))} · sauvegarde disponible</span></div>',
+                    f'<span>Profil {job_profile} · sauvegarde disponible</span></div>',
                     unsafe_allow_html=True,
                 )
                 if st.button(

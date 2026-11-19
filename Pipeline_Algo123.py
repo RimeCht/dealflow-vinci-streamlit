@@ -15,6 +15,7 @@ import Algo3
 import dealflow_profiles
 import Generer_dashboard
 import excel_styling
+import vinci_concessions
 
 
 load_dotenv()
@@ -358,6 +359,7 @@ def process_pipeline_row(
         )
 
     except Exception as exc:
+        row_data["dealflow_profile"] = dealflow_profiles.profile_label()
         return finalize_row(
             stop_pipeline(
                 row_data,
@@ -387,6 +389,11 @@ def load_resume_results(temp_file: Path) -> list[dict]:
         return []
 
     if temp_df.empty:
+        return []
+
+    saved_profiles = temp_df.get("dealflow_profile", pd.Series("", index=temp_df.index)).fillna("").astype(str)
+    if not dealflow_profiles.can_resume_profile(saved_profiles):
+        log(f"Profil différent ou non identifié dans {temp_file.name}. Reprise depuis le début.")
         return []
 
     records = [row_to_dict(row) for _, row in temp_df.iterrows()]
@@ -540,6 +547,11 @@ def build_team_summary(final_df: pd.DataFrame) -> pd.DataFrame:
     summary["algo1_raison"] = summary_series(final_df, ["algo1_reason", "reason"])
     summary["algo1_regle_finale"] = summary_series(final_df, ["algo1_regle_finale", "regle_finale"])
     summary["algo1_infos_manquantes"] = summary_series(final_df, ["algo1_missing_information", "missing_information"])
+    grid = vinci_concessions.current_grid()
+    active_columns = grid.result_columns if grid else ()
+    for field in vinci_concessions.RESULT_COLUMNS:
+        if field in final_df.columns or field in active_columns:
+            summary[field] = summary_series(final_df, [field])
 
     summary["algo2_execute"] = final_df.get("pipeline_algo2_executed", "")
     summary["algo2_decision_finale"] = summary_series(final_df, ["algo2_decision_finale"])

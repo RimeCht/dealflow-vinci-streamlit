@@ -1,12 +1,39 @@
 import os
 import re
 import unicodedata
+from collections.abc import Iterable
 
 
 EUROPE = "EUROPE"
 LATAM = "LATAM"
+VINCI_CONCESSIONS = "VINCI_CONCESSIONS"
+VINCI_AIRPORTS = "VINCI_AIRPORTS"
+VINCI_AUTOROUTES = "VINCI_AUTOROUTES"
+VINCI_HIGHWAYS = "VINCI_HIGHWAYS"
+VINCI_RAILWAYS = "VINCI_RAILWAYS"
+VINCI_STADIUM = "VINCI_STADIUM"
 
-AVAILABLE_PROFILES = [EUROPE, LATAM]
+CONCESSIONS_ACTIVITIES = {
+    VINCI_AIRPORTS: "les aéroports et les services de leurs partenaires sur site",
+    VINCI_AUTOROUTES: "l'exploitation et l'entretien du réseau autoroutier concédé en France",
+    VINCI_HIGHWAYS: "l'exploitation, la maintenance et le péage des concessions routières internationales",
+    VINCI_RAILWAYS: "les infrastructures ferroviaires et urbaines, dont les voies, équipements et gares",
+    VINCI_STADIUM: "l'exploitation de grandes enceintes sportives et événementielles",
+}
+CONCESSIONS_PROFILES = tuple(CONCESSIONS_ACTIVITIES)
+ANALYSIS_SCOPES = (EUROPE, LATAM, VINCI_CONCESSIONS)
+AVAILABLE_PROFILES = [EUROPE, LATAM, *CONCESSIONS_PROFILES]
+
+PROFILE_NAMES = {
+    EUROPE: "Europe",
+    LATAM: "LATAM",
+    VINCI_CONCESSIONS: "VINCI Concessions",
+    VINCI_AIRPORTS: "VINCI Airports",
+    VINCI_AUTOROUTES: "VINCI Autoroutes",
+    VINCI_HIGHWAYS: "VINCI Highways",
+    VINCI_RAILWAYS: "VINCI Railways",
+    VINCI_STADIUM: "VINCI Stadium",
+}
 
 LATAM_SEED_ARR_THRESHOLD_EUR = 500_000
 LATAM_CATALYST_ARR_THRESHOLD_EUR = 500_000
@@ -52,7 +79,19 @@ def normalize_text(text: str) -> str:
 
 def current_profile() -> str:
     value = os.getenv("DEALFLOW_PROFILE", EUROPE).strip().upper()
-    return LATAM if value == LATAM else EUROPE
+    return value if value in AVAILABLE_PROFILES else EUROPE
+
+
+def display_name(profile: str) -> str:
+    return PROFILE_NAMES.get(profile, profile)
+
+
+def can_resume_profile(saved_profiles: Iterable[str]) -> bool:
+    profile = current_profile()
+    saved = {value.strip().upper() for value in saved_profiles}
+    if profile in CONCESSIONS_PROFILES:
+        return saved == {profile}
+    return saved - {""} <= {profile}  # Certaines sauvegardes historiques n'indiquent pas le profil.
 
 
 def is_latam(profile: str | None = None) -> bool:
@@ -91,7 +130,16 @@ def format_matches(matches: list[str]) -> str:
 
 
 def profile_prompt_context() -> str:
-    if not is_latam():
+    profile = current_profile()
+    if profile in CONCESSIONS_ACTIVITIES:
+        return (
+            f"Profil : {display_name(profile)}. Réponds en français.\n"
+            f"Périmètre métier : {CONCESSIONS_ACTIVITIES[profile]}.\n"
+            "Pour l'affinage stratégique, évalue le cas d'usage pour un exploitant de cette BU "
+            "ou un partenaire qui intervient sur ses infrastructures. "
+            "Applique les règles d'affinage et d'orientation des programmes Leonard."
+        )
+    if profile == EUROPE:
         return (
             "Profile: EUROPE.\n"
             "Use the existing Leonard / VINCI Europe criteria and answer in French."
